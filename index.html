@@ -3,21 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Puzzle Rules</title>
+    <title>Number Connect - Auto Generator</title>
     <style>
         body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 20px; }
-        canvas { background: #fff; border: 1px solid #ddd; display: block; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); touch-action: none; }
-        .info { margin: 10px; font-weight: bold; color: #555; min-height: 24px; font-size: 0.9rem; }
+        canvas { background: #fff; border: 1px solid #ddd; display: block; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); touch-action: none; border-radius: 8px; }
+        .info { margin: 10px; font-weight: bold; color: #555; min-height: 24px; font-size: 1rem; }
         .controls { margin-top: 20px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; border: 1px solid #ccc; background: white; }
+        button { padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 30px; border: none; background: #34495e; color: white; font-weight: bold; box-shadow: 0 4px 0 #2c3e50; }
+        button:active { transform: translateY(2px); box-shadow: 0 2px 0 #2c3e50; }
     </style>
 </head>
 <body>
-    <h1>全マス埋めて繋ごう！</h1>
-    <div id="status" class="info">同じ数字を、全マス通るように繋いでね</div>
+    <h1>一筆書きパズル (4x4)</h1>
+    <div id="status" class="info">生成中...</div>
     <canvas id="gameCanvas"></canvas>
     <div class="controls">
-        <button onclick="initGame()">リセット</button>
+        <button onclick="initGame()">新しい問題を作る</button>
     </div>
 
     <script>
@@ -29,168 +30,42 @@
         const padding = 50;
         let spacing, canvasSize;
 
-        const numbers = [
-            {x: 0, y: 0, val: 1, color: "#ff4757"}, {x: 3, y: 3, val: 1, color: "#ff4757"},
-            {x: 0, y: 3, val: 2, color: "#2e86de"}, {x: 3, y: 0, val: 2, color: "#2e86de"}
-        ];
-
+        let numbers = [];
         let finishedLines = []; 
-        let currentPath = []; // マス座標 {x, y} の配列
+        let currentPath = []; 
         let isDrawing = false;
         let startNum = null;
 
-        function initGame() {
-            canvasSize = Math.min(window.innerWidth - 40, 400);
-            canvas.width = canvasSize;
-            canvas.height = canvasSize;
-            spacing = (canvasSize - padding * 2) / (gridSize - 1);
-            finishedLines = [];
-            currentPath = [];
-            statusEl.innerText = "同じ数字を、全マス通るように繋いでね";
-            draw();
-        }
-
-        // ピクセル座標をグリッド座標(0-3)に変換
-        function getGridPos(p) {
-            const x = Math.round((p.x - padding) / spacing);
-            const y = Math.round((p.y - padding) / spacing);
-            if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) {
-                // 中心からの距離をチェック（感度調整）
-                const targetX = padding + x * spacing;
-                const targetY = padding + y * spacing;
-                const dist = Math.hypot(p.x - targetX, p.y - targetY);
-                return dist < 30 ? {x, y} : null;
-            }
-            return null;
-        }
-
-        function draw() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // 1. 背景グリッド
-            ctx.strokeStyle = "#eee";
-            ctx.lineWidth = 2;
-            for(let i=0; i<gridSize; i++) {
-                ctx.beginPath(); ctx.moveTo(padding + i*spacing, padding); ctx.lineTo(padding + i*spacing, canvas.height - padding); ctx.stroke();
-                ctx.beginPath(); ctx.moveTo(padding, padding + i*spacing); ctx.lineTo(canvas.width - padding, padding + i*spacing); ctx.stroke();
-            }
-
-            // 2. 線を描画する関数
-            const drawPath = (path, color, alpha=1) => {
-                ctx.strokeStyle = color;
-                ctx.globalAlpha = alpha;
-                ctx.lineWidth = 15;
-                ctx.lineCap = "round";
-                ctx.lineJoin = "round";
-                ctx.beginPath();
-                path.forEach((p, i) => {
-                    const vx = padding + p.x * spacing;
-                    const vy = padding + p.y * spacing;
-                    if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
-                });
-                ctx.stroke();
-                ctx.globalAlpha = 1;
-            };
-
-            finishedLines.forEach(line => drawPath(line.path, line.color));
-            if (isDrawing) drawPath(currentPath, startNum.color, 0.5);
-
-            // 3. 数字の描画
-            ctx.font = "bold 24px Arial";
-            ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            numbers.forEach(num => {
-                const x = padding + num.x * spacing;
-                const y = padding + num.y * spacing;
-                ctx.fillStyle = num.color;
-                ctx.beginPath(); ctx.arc(x, y, 20, 0, Math.PI * 2); ctx.fill();
-                ctx.fillStyle = "white";
-                ctx.fillText(num.val, x, y);
-            });
-        }
-
-        function getPos(e) {
-            const rect = canvas.getBoundingClientRect();
-            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-            return { x: clientX - rect.left, y: clientY - rect.top };
-        }
-
-        canvas.addEventListener('mousedown', startAction);
-        canvas.addEventListener('touchstart', startAction);
-
-        function startAction(e) {
-            const p = getGridPos(getPos(e));
-            if (!p) return;
-            const num = numbers.find(n => n.x === p.x && n.y === p.y);
-            if (num) {
-                // すでに引かれた線がある場合は消す
-                finishedLines = finishedLines.filter(l => l.val !== num.val);
-                isDrawing = true;
-                startNum = num;
-                currentPath = [{x: p.x, y: p.y}];
-            }
-        }
-
-        canvas.addEventListener('mousemove', moveAction);
-        canvas.addEventListener('touchmove', moveAction);
-
-        function moveAction(e) {
-            if (!isDrawing) return;
-            if (e.type === 'touchmove') e.preventDefault();
-            const p = getGridPos(getPos(e));
-            if (!p) return;
-
-            const last = currentPath[currentPath.length - 1];
-            // ルール1: 隣のマスか？
-            const isNeighbor = (Math.abs(p.x - last.x) + Math.abs(p.y - last.y)) === 1;
+        // --- 1. 必ず解ける盤面を生成するロジック ---
+        function generateLevel() {
+            let path = [];
+            let success = false;
             
-            if (isNeighbor) {
-                // ルール2 & 4: 交差禁止 & 他の数字マス禁止
-                const isOccupied = finishedLines.some(l => l.path.some(pt => pt.x === p.x && pt.y === p.y));
-                const isCurrentPath = currentPath.some(pt => pt.x === p.x && pt.y === p.y);
-                const otherNum = numbers.find(n => n.x === p.x && n.y === p.y);
+            // 全マス埋まるまでランダムウォークを繰り返す
+            while (!success) {
+                let startX = Math.floor(Math.random() * gridSize);
+                let startY = Math.floor(Math.random() * gridSize);
+                path = [{x: startX, y: startY}];
+                let visited = new Set([`${startX},${startY}`]);
+                
+                for (let i = 0; i < 200; i++) {
+                    let last = path[path.length - 1];
+                    let neighbors = [
+                        {x: last.x+1, y: last.y}, {x: last.x-1, y: last.y},
+                        {x: last.x, y: last.y+1}, {x: last.x, y: last.y-1}
+                    ].filter(n => 
+                        n.x >= 0 && n.x < gridSize && n.y >= 0 && n.y < gridSize &&
+                        !visited.has(`${n.x},${n.y}`)
+                    );
 
-                if (!isOccupied && !isCurrentPath) {
-                    if (!otherNum || (otherNum.val === startNum.val && otherNum !== startNum)) {
-                        currentPath.push(p);
-                        draw();
-                    }
+                    if (neighbors.length === 0) break;
+                    let next = neighbors[Math.floor(Math.random() * neighbors.length)];
+                    path.push(next);
+                    visited.add(`${next.x},${next.y}`);
                 }
+                // 16マス全て通った場合のみ成功
+                if (visited.size === gridSize * gridSize) success = true;
             }
-        }
 
-        window.addEventListener('mouseup', endAction);
-        window.addEventListener('touchend', endAction);
-
-        function endAction() {
-            if (!isDrawing) return;
-            const last = currentPath[currentPath.length - 1];
-            const endNum = numbers.find(n => n.x === last.x && n.y === last.y);
-
-            if (endNum && endNum.val === startNum.val && endNum !== startNum) {
-                finishedLines.push({ path: [...currentPath], color: startNum.color, val: startNum.val });
-                checkClear();
-            }
-            
-            isDrawing = false;
-            currentPath = [];
-            draw();
-        }
-
-        function checkClear() {
-            // ルール3: 全マス使用チェック
-            const usedCount = new Set();
-            finishedLines.forEach(l => l.path.forEach(p => usedCount.add(`${p.x},${p.y}`)));
-            
-            if (usedCount.size === gridSize * gridSize) {
-                statusEl.innerText = "✨ クリア！！おめでとう！ ✨";
-            } else {
-                statusEl.innerText = "繋がった！残りのマスも埋めてね";
-            }
-        }
-
-        initGame();
-    </script>
-</body>
-</html>
+            // 作った道を2つのペアに分ける（例：1～8マス、9～16マス）
+            const split = 7 + Math.floor(Math.random() *
