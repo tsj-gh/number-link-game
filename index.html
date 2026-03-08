@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Pro Feel Fixed</title>
+    <title>Number Connect - Merge & Split</title>
     <style>
         body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 10px; }
         .config { background: #eee; padding: 10px; margin-bottom: 10px; font-size: 14px; }
@@ -26,16 +26,14 @@
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const statusEl = document.getElementById('status');
-        
-        let gridSize, pairCount;
+        let gridSize, pairCount, spacing, canvasSize;
         const padding = 40;
-        let spacing, canvasSize;
 
         let numbers = [];
-        let paths = {}; 
+        let paths = {}; // { val: [ [{x,y}...], [{x,y}...] ] } ペアごとに最大2本の線を許可
         let isDrawing = false;
-        let activeVal = null; 
-        let loadingInterval;
+        let activeVal = null, activePathIdx = null;
+        let lastDownPos = null;
 
         const colors = ["#ff4757", "#2e86de", "#2ed573", "#ffa502", "#a29bfe", "#e17055", "#00cec9", "#6c5ce7", "#fdcb6e"];
 
@@ -43,8 +41,7 @@
             return new Promise((resolve) => {
                 const attempt = () => {
                     let path = [];
-                    let startX = Math.floor(Math.random() * gridSize);
-                    let startY = Math.floor(Math.random() * gridSize);
+                    let startX = Math.floor(Math.random() * gridSize), startY = Math.floor(Math.random() * gridSize);
                     path = [{x: startX, y: startY}];
                     let visited = new Set([`${startX},${startY}`]);
                     for (let i = 0; i < 500; i++) {
@@ -59,12 +56,11 @@
                         numbers = []; paths = {};
                         let step = Math.floor(path.length / pairCount);
                         for(let m=0; m < pairCount; m++) {
-                            let sIdx = m * step;
-                            let eIdx = (m === pairCount - 1) ? path.length - 1 : (m + 1) * step - 1;
-                            let n1 = {x: path[sIdx].x, y: path[sIdx].y, val: m+1, color: colors[m]};
-                            let n2 = {x: path[eIdx].x, y: path[eIdx].y, val: m+1, color: colors[m]};
-                            numbers.push(n1, n2);
-                            paths[m+1] = [{x: n1.x, y: n1.y}]; 
+                            let sIdx = m * step, eIdx = (m === pairCount - 1) ? path.length - 1 : (m + 1) * step - 1;
+                            numbers.push({x: path[sIdx].x, y: path[sIdx].y, val: m+1, color: colors[m]});
+                            numbers.push({x: path[eIdx].x, y: path[eIdx].y, val: m+1, color: colors[m]});
+                            // ペアごとに2つの「点（線のはじまり）」を用意
+                            paths[m+1] = [ [{x: path[sIdx].x, y: path[sIdx].y}], [{x: path[eIdx].x, y: path[eIdx].y}] ];
                         }
                         resolve();
                     } else { setTimeout(attempt, 0); }
@@ -83,7 +79,7 @@
             spacing = (canvasSize - padding * 2) / (gridSize - 1);
             statusEl.innerText = "生成中...";
             await generateLevel();
-            statusEl.innerText = "端点をドラッグして繋ごう！";
+            statusEl.innerText = "両端から引けるよ！タップで消去";
             draw();
         }
 
@@ -96,22 +92,23 @@
                 }
             }
             Object.keys(paths).forEach(val => {
-                const path = paths[val];
-                if (path.length < 1) return;
-                ctx.strokeStyle = colors[val - 1];
-                ctx.lineWidth = spacing * 0.45;
-                ctx.lineCap = "round"; ctx.lineJoin = "round";
-                ctx.beginPath();
-                path.forEach((p, i) => {
-                    const vx = padding + p.x * spacing; const vy = padding + p.y * spacing;
-                    if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+                paths[val].forEach(path => {
+                    if (path.length < 1) return;
+                    ctx.strokeStyle = colors[val - 1];
+                    ctx.lineWidth = spacing * 0.45;
+                    ctx.lineCap = "round"; ctx.lineJoin = "round";
+                    ctx.beginPath();
+                    path.forEach((p, i) => {
+                        const vx = padding + p.x * spacing; const vy = padding + p.y * spacing;
+                        if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+                    });
+                    ctx.stroke();
                 });
-                ctx.stroke();
             });
             let radius = spacing * 0.35;
             ctx.font = `bold ${radius}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
             numbers.forEach(num => {
-                const x = padding + num.x * spacing; const y = padding + num.y * spacing;
+                const x = padding + num.x * spacing, y = padding + num.y * spacing;
                 ctx.fillStyle = num.color; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
                 ctx.fillStyle = "white"; ctx.fillText(num.val, x, y);
             });
@@ -119,31 +116,25 @@
 
         function getGridPos(e) {
             const rect = canvas.getBoundingClientRect();
-            const rawX = (e.clientX - rect.left - padding) / spacing;
-            const rawY = (e.clientY - rect.top - padding) / spacing;
-            const x = Math.round(rawX);
-            const y = Math.round(rawY);
-            // 感度調整: マスの中心から0.4マス以上離れていたら無視
-            if (Math.abs(rawX - x) < 0.4 && Math.abs(rawY - y) < 0.4 &&
-                x >= 0 && x < gridSize && y >= 0 && y < gridSize) return {x, y};
+            const rawX = (e.clientX - rect.left - padding) / spacing, rawY = (e.clientY - rect.top - padding) / spacing;
+            const x = Math.round(rawX), y = Math.round(rawY);
+            if (Math.abs(rawX - x) < 0.4 && Math.abs(rawY - y) < 0.4 && x >= 0 && x < gridSize && y >= 0 && y < gridSize) return {x, y};
             return null;
         }
 
         canvas.addEventListener('pointerdown', (e) => {
             const p = getGridPos(e); if (!p) return;
+            lastDownPos = p;
             for (let val in paths) {
-                const path = paths[val];
-                const first = path[0];
-                const last = path[path.length - 1];
-                if ((p.x === first.x && p.y === first.y) || (p.x === last.x && p.y === last.y)) {
-                    activeVal = val;
-                    isDrawing = true;
-                    canvas.setPointerCapture(e.pointerId);
-                    if (p.x === first.x && p.y === first.y && path.length > 1) {
-                        path.reverse();
+                for (let i = 0; i < paths[val].length; i++) {
+                    const path = paths[val][i];
+                    const first = path[0], last = path[path.length - 1];
+                    if ((p.x === first.x && p.y === first.y) || (p.x === last.x && p.y === last.y)) {
+                        if (p.x === first.x && p.y === first.y) path.reverse();
+                        activeVal = val; activePathIdx = i; isDrawing = true;
+                        canvas.setPointerCapture(e.pointerId);
+                        draw(); return;
                     }
-                    draw();
-                    return;
                 }
             }
         });
@@ -151,49 +142,68 @@
         window.addEventListener('pointermove', (e) => {
             if (!isDrawing) return;
             const p = getGridPos(e); if (!p) return;
-            const path = paths[activeVal];
-            const last = path[path.length - 1];
+            const currentPath = paths[activeVal][activePathIdx];
+            const last = currentPath[currentPath.length - 1];
             if (p.x === last.x && p.y === last.y) return;
             if (Math.abs(p.x - last.x) + Math.abs(p.y - last.y) === 1) {
-                if (path.length > 1 && p.x === path[path.length-2].x && p.y === path[path.length-2].y) {
-                    path.pop(); draw(); return;
+                // 戻る処理
+                if (currentPath.length > 1 && p.x === currentPath[currentPath.length-2].x && p.y === currentPath[currentPath.length-2].y) {
+                    currentPath.pop(); draw(); return;
                 }
-                const isOccupied = Object.values(paths).some(op => op.some(pt => pt.x === p.x && pt.y === p.y));
-                const targetNum = numbers.find(n => n.x === p.x && n.y === p.y && n.val == activeVal);
-                const otherNum = numbers.find(n => n.x === p.x && n.y === p.y && n.val != activeVal);
-                if (!isOccupied && !otherNum) {
-                    path.push(p); draw();
-                } else if (targetNum && (p.x !== path[0].x || p.y !== path[0].y)) {
-                    path.push(p); draw();
+                // 合流判定
+                const otherPathIdx = 1 - activePathIdx;
+                const otherPath = paths[activeVal][otherPathIdx];
+                if (otherPath && otherPath.some(pt => pt.x === p.x && pt.y === p.y)) {
+                    // 合流！otherPathを逆順にしてcurrentPathにくっつける
+                    let targetIdx = otherPath.findIndex(pt => pt.x === p.x && pt.y === p.y);
+                    let partToJoin = otherPath.slice(0, targetIdx + 1).reverse();
+                    paths[activeVal][activePathIdx] = currentPath.concat(partToJoin);
+                    paths[activeVal].splice(otherPathIdx, 1); // 1本になった
+                    isDrawing = false; draw(); return;
+                }
+                // 他の線との衝突判定
+                const isOccupied = Object.values(paths).flat().some(path => path.some(pt => pt.x === p.x && pt.y === p.y));
+                if (!isOccupied) {
+                    currentPath.push(p); draw();
                 }
             }
         });
 
-        window.addEventListener('pointerup', () => {
-            isDrawing = false;
-            activeVal = null;
-            checkClear();
-            draw();
+        window.addEventListener('pointerup', (e) => {
+            const p = getGridPos(e);
+            if (!isDrawing && p && lastDownPos && p.x === lastDownPos.x && p.y === lastDownPos.y) {
+                // シングルタップで分断
+                for (let val in paths) {
+                    for (let i = 0; i < paths[val].length; i++) {
+                        const path = paths[val][i];
+                        const idx = path.findIndex(pt => pt.x === p.x && pt.y === p.y);
+                        if (idx !== -1) {
+                            // 数字の上なら線を空にする
+                            if (numbers.some(n => n.x === p.x && n.y === p.y)) {
+                                paths[val][i] = [{x: p.x, y: p.y}];
+                            } else {
+                                // 途中のマスならそこで切断して2本に分ける
+                                const path1 = path.slice(0, idx);
+                                const path2 = path.slice(idx + 1);
+                                paths[val] = [path1, path2];
+                            }
+                            draw(); break;
+                        }
+                    }
+                }
+            }
+            isDrawing = false; activeVal = null; activePathIdx = null; checkClear(); draw();
         });
 
         function checkClear() {
             const usedCount = new Set();
             let allConnected = true;
             for (let val in paths) {
-                const path = paths[val];
-                path.forEach(p => usedCount.add(`${p.x},${p.y}`));
-                const first = path[0];
-                const last = path[path.length - 1];
-                const pair = numbers.filter(n => n.val == val);
-                const connected = (
-                    (pair[0].x === first.x && pair[0].y === first.y && pair[1].x === last.x && pair[1].y === last.y) ||
-                    (pair[1].x === first.x && pair[1].y === first.y && pair[0].x === last.x && pair[0].y === last.y)
-                );
-                if (!connected) allConnected = false;
+                const pSet = paths[val];
+                pSet.forEach(path => path.forEach(p => usedCount.add(`${p.x},${p.y}`)));
+                if (pSet.length !== 1) allConnected = false; // 1本に統合されていない
             }
-            if (usedCount.size === gridSize * gridSize && allConnected) {
-                statusEl.innerText = "✨ PERFECT CLEAR! ✨";
-            }
+            if (usedCount.size === gridSize * gridSize && allConnected) statusEl.innerText = "✨ PERFECT CLEAR! ✨";
         }
         initGame();
     </script>
