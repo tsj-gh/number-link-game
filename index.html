@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Auto Generator</title>
+    <title>Number Connect - Pro Generator</title>
     <style>
         body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 20px; }
         canvas { background: #fff; border: 1px solid #ddd; display: block; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); touch-action: none; border-radius: 8px; }
@@ -15,10 +15,10 @@
 </head>
 <body>
     <h1>一筆書きパズル (4x4)</h1>
-    <div id="status" class="info">生成中...</div>
+    <div id="status" class="info">準備中...</div>
     <canvas id="gameCanvas"></canvas>
     <div class="controls">
-        <button onclick="initGame()">新しい問題を作る</button>
+        <button id="resetBtn" onclick="initGame()">新しい問題を作る</button>
     </div>
 
     <script>
@@ -35,37 +35,185 @@
         let currentPath = []; 
         let isDrawing = false;
         let startNum = null;
+        let loadingInterval;
 
-        // --- 1. 必ず解ける盤面を生成するロジック ---
-        function generateLevel() {
-            let path = [];
-            let success = false;
+        // --- アニメーション管理 ---
+        function startLoadingAnim() {
+            let dots = 0;
+            loadingInterval = setInterval(() => {
+                dots = (dots + 1) % 4;
+                statusEl.innerText = "生成中" + ".".repeat(dots);
+            }, 500);
+        }
+
+        function stopLoadingAnim() {
+            clearInterval(loadingInterval);
+        }
+
+        // --- 盤面生成ロジック (Backtrackingで効率化) ---
+        async function generateLevel() {
+            return new Promise((resolve) => {
+                const attempt = () => {
+                    let path = [];
+                    // スタート地点をランダムに決定
+                    let startX = Math.floor(Math.random() * gridSize);
+                    let startY = Math.floor(Math.random() * gridSize);
+                    path = [{x: startX, y: startY}];
+                    let visited = new Set([`${startX},${startY}`]);
+                    
+                    // 最大200歩のランダムウォーク（4x4なら十分）
+                    for (let i = 0; i < 100; i++) {
+                        let last = path[path.length - 1];
+                        let neighbors = [
+                            {x: last.x+1, y: last.y}, {x: last.x-1, y: last.y},
+                            {x: last.x, y: last.y+1}, {x: last.x, y: last.y-1}
+                        ].filter(n => 
+                            n.x >= 0 && n.x < gridSize && n.y >= 0 && n.y < gridSize &&
+                            !visited.has(`${n.x},${n.y}`)
+                        );
+
+                        if (neighbors.length === 0) break;
+                        
+                        // 次の地点の選択肢の中で「行き止まり」が少ない方を選ぶ（Warnsdorffの規則の簡易版）
+                        neighbors.sort((a, b) => {
+                            const getDegree = (p) => [
+                                {x: p.x+1, y: p.y}, {x: p.x-1, y: p.y}, {x: p.x, y: p.y+1}, {x: p.x, y: p.y-1}
+                            ].filter(nn => nn.x>=0 && nn.x<gridSize && nn.y>=0 && nn.y<gridSize && !visited.has(`${nn.x},${nn.y}`)).length;
+                            return getDegree(a) - getDegree(b);
+                        });
+
+                        let next = neighbors[0]; // 最も選択肢が狭まる方を先に埋める
+                        path.push(next);
+                        visited.add(`${next.x},${next.y}`);
+                    }
+
+                    if (visited.size === gridSize * gridSize) {
+                        const split = 7 + Math.floor(Math.random() * 2); 
+                        numbers = [
+                            {x: path[0].x, y: path[0].y, val: 1, color: "#ff4757"},
+                            {x: path[split].x, y: path[split].y, val: 1, color: "#ff4757"},
+                            {x: path[split+1].x, y: path[split+1].y, val: 2, color: "#2e86de"},
+                            {x: path[gridSize*gridSize-1].x, y: path[gridSize*gridSize-1].y, val: 2, color: "#2e86de"}
+                        ];
+                        resolve();
+                    } else {
+                        setTimeout(attempt, 10); // 少し間を空けて再試行
+                    }
+                };
+                attempt();
+            });
+        }
+
+        async function initGame() {
+            canvasSize = Math.min(window.innerWidth - 40, 400);
+            canvas.width = canvasSize;
+            canvas.height = canvasSize;
+            spacing = (canvasSize - padding * 2) / (gridSize - 1);
             
-            // 全マス埋まるまでランダムウォークを繰り返す
-            while (!success) {
-                let startX = Math.floor(Math.random() * gridSize);
-                let startY = Math.floor(Math.random() * gridSize);
-                path = [{x: startX, y: startY}];
-                let visited = new Set([`${startX},${startY}`]);
-                
-                for (let i = 0; i < 200; i++) {
-                    let last = path[path.length - 1];
-                    let neighbors = [
-                        {x: last.x+1, y: last.y}, {x: last.x-1, y: last.y},
-                        {x: last.x, y: last.y+1}, {x: last.x, y: last.y-1}
-                    ].filter(n => 
-                        n.x >= 0 && n.x < gridSize && n.y >= 0 && n.y < gridSize &&
-                        !visited.has(`${n.x},${n.y}`)
-                    );
+            finishedLines = [];
+            currentPath = [];
+            
+            startLoadingAnim();
+            document.getElementById('resetBtn').disabled = true;
 
-                    if (neighbors.length === 0) break;
-                    let next = neighbors[Math.floor(Math.random() * neighbors.length)];
-                    path.push(next);
-                    visited.add(`${next.x},${next.y}`);
+            await generateLevel();
+            
+            stopLoadingAnim();
+            document.getElementById('resetBtn').disabled = false;
+            statusEl.innerText = "同じ色を繋いで、全マス埋めてね！";
+            draw();
+        }
+
+        // --- 描画・操作ロジック (前回の安定版) ---
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = "#ddd";
+            for(let i=0; i<gridSize; i++) {
+                for(let j=0; j<gridSize; j++) {
+                    ctx.beginPath(); ctx.arc(padding + i*spacing, padding + j*spacing, 4, 0, Math.PI*2); ctx.fill();
                 }
-                // 16マス全て通った場合のみ成功
-                if (visited.size === gridSize * gridSize) success = true;
             }
+            const drawPath = (pList, color, alpha=1) => {
+                ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 14; ctx.lineCap = "round"; ctx.lineJoin = "round";
+                ctx.beginPath();
+                pList.forEach((p, i) => {
+                    const vx = padding + p.x * spacing; const vy = padding + p.y * spacing;
+                    if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+                });
+                ctx.stroke(); ctx.globalAlpha = 1;
+            };
+            finishedLines.forEach(l => drawPath(l.path, l.color));
+            if (isDrawing) drawPath(currentPath, startNum.color, 0.5);
+            ctx.font = "bold 22px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            numbers.forEach(num => {
+                const x = padding + num.x * spacing; const y = padding + num.y * spacing;
+                ctx.fillStyle = num.color; ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = "white"; ctx.fillText(num.val, x, y);
+            });
+        }
 
-            // 作った道を2つのペアに分ける（例：1～8マス、9～16マス）
-            const split = 7 + Math.floor(Math.random() *
+        function getGridPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            const x = Math.round((clientX - rect.left - padding) / spacing);
+            const y = Math.round((clientY - rect.top - padding) / spacing);
+            if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) return {x, y};
+            return null;
+        }
+
+        function startAction(e) {
+            const p = getGridPos(e); if (!p) return;
+            const num = numbers.find(n => n.x === p.x && n.y === p.y);
+            if (num) {
+                finishedLines = finishedLines.filter(l => l.val !== num.val);
+                isDrawing = true; startNum = num; currentPath = [{x: p.x, y: p.y}];
+            }
+        }
+
+        function moveAction(e) {
+            if (!isDrawing) return;
+            if (e.type === 'touchmove') e.preventDefault();
+            const p = getGridPos(e); if (!p) return;
+            const last = currentPath[currentPath.length - 1];
+            if ((Math.abs(p.x - last.x) + Math.abs(p.y - last.y)) === 1) {
+                const isOccupied = finishedLines.some(l => l.path.some(pt => pt.x === p.x && pt.y === p.y));
+                const isCurrent = currentPath.some(pt => pt.x === p.x && pt.y === p.y);
+                const otherNum = numbers.find(n => n.x === p.x && n.y === p.y);
+                if (!isOccupied && !isCurrent) {
+                    if (!otherNum || (otherNum.val === startNum.val && (p.x !== startNum.x || p.y !== startNum.y))) {
+                        currentPath.push(p); draw();
+                    }
+                }
+            }
+        }
+
+        function endAction() {
+            if (!isDrawing) return;
+            const last = currentPath[currentPath.length - 1];
+            const endNum = numbers.find(n => n.x === last.x && n.y === last.y);
+            if (endNum && endNum.val === startNum.val && (endNum.x !== startNum.x || endNum.y !== startNum.y)) {
+                finishedLines.push({ path: [...currentPath], color: startNum.color, val: startNum.val });
+                checkClear();
+            }
+            isDrawing = false; currentPath = []; draw();
+        }
+
+        function checkClear() {
+            const usedCount = new Set();
+            finishedLines.forEach(l => l.path.forEach(p => usedCount.add(`${p.x},${p.y}`)));
+            if (usedCount.size === gridSize * gridSize) statusEl.innerText = "✨ クリア！！ ✨";
+            else if (finishedLines.length === 2) statusEl.innerText = "全部のマスを埋めてみて！";
+        }
+
+        canvas.addEventListener('mousedown', startAction);
+        canvas.addEventListener('touchstart', startAction);
+        window.addEventListener('mousemove', moveAction);
+        canvas.addEventListener('touchmove', moveAction);
+        window.addEventListener('mouseup', endAction);
+        window.addEventListener('touchend', endAction);
+
+        initGame();
+    </script>
+</body>
+</html>
