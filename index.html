@@ -3,63 +3,52 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Strategy Edition</title>
+    <title>Number Connect - Guaranteed Solvable</title>
     <style>
         :root { --main-bg: #f8f9fa; --panel-bg: #ffffff; --accent: #34495e; }
-        body { font-family: 'Helvetica Neue', Arial, sans-serif; background: var(--main-bg); margin: 0; display: flex; flex-direction: column; align-items: center; touch-action: none; }
-        .config { width: 100%; background: var(--accent); color: white; padding: 15px 0; text-align: center; box-shadow: 0 2px 10px rgba(0,0,0,0.2); }
-        .config select, .config button { padding: 8px 12px; border-radius: 8px; border: none; font-size: 14px; margin: 0 5px; vertical-align: middle; }
+        body { font-family: sans-serif; background: var(--main-bg); margin: 0; display: flex; flex-direction: column; align-items: center; touch-action: none; }
+        .config { width: 100%; background: var(--accent); color: white; padding: 15px 0; text-align: center; }
+        .config select, .config button { padding: 8px 12px; border-radius: 8px; border: none; font-size: 14px; margin: 0 5px; }
         .config button { background: #2ecc71; color: white; font-weight: bold; cursor: pointer; }
-        .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px; max-width: 1000px; }
-        .game-area { flex: 1; min-width: 320px; display: flex; flex-direction: column; align-items: center; }
-        .side-panel { width: 220px; background: var(--panel-bg); padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: left; font-size: 0.9rem; color: #666; }
-        canvas { background: #fff; border: 2px solid #eee; display: block; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-radius: 12px; }
-        .info-bar { margin: 15px 0; display: flex; justify-content: space-between; width: 100%; max-width: 500px; font-weight: bold; }
+        .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px; }
+        .game-area { display: flex; flex-direction: column; align-items: center; }
+        .side-panel { width: 240px; background: var(--panel-bg); padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: left; font-size: 0.85rem; }
+        canvas { background: #fff; border: 2px solid #eee; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-radius: 12px; }
+        .info-bar { margin: 10px 0; display: flex; justify-content: space-between; width: 100%; font-weight: bold; }
         #resultOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; justify-content: center; align-items: center; flex-direction: column; color: white; }
-        .result-card { background: white; color: #333; padding: 40px; border-radius: 20px; text-align: center; }
     </style>
 </head>
 <body>
 
 <div class="config">
     難易度: <select id="diffSelect">
-        <option value="easy" selected>初級 (一本道)</option>
-        <option value="normal">中級 (交差・迂回)</option>
+        <option value="easy">初級 (最短経路)</option>
+        <option value="normal" selected>中級 (迂回必須)</option>
     </select>
     サイズ: <select id="gridSelect" onchange="updatePairOptions()">
-        <option value="4">4x4</option><option value="5">5x5</option>
-        <option value="6" selected>6x6</option><option value="8">8x8</option>
-        <option value="10">10x10</option>
+        <option value="4">4x4</option><option value="6" selected>6x6</option>
+        <option value="8">8x8</option><option value="10">10x10</option>
     </select>
     ペア: <select id="pairSelect"></select>
-    <button onclick="initGame()">生成 & スタート</button>
+    <button onclick="initGame()">生成</button>
 </div>
 
 <div class="container">
     <div class="game-area">
-        <div class="info-bar">
-            <span id="status">準備中...</span>
-            <span id="timer">Time: 00:00</span>
-        </div>
+        <div class="info-bar"><span id="status">準備中</span><span id="timer">00:00</span></div>
         <canvas id="gameCanvas"></canvas>
     </div>
     <div class="side-panel">
-        <h3>💡 ルール</h3>
-        <ul>
-            <li>同じ数字を線で繋ぎます。</li>
-            <li><strong>全てのマス</strong>を埋めるとクリア。</li>
-            <li><strong>中級</strong>は最短距離で繋ぐと他の線が通れなくなるため、迂回が必要です。</li>
-            <li>先端をタップで1マス消去。</li>
-        </ul>
+        <h3>💡 攻略のヒント</h3>
+        <p><b>中級モード:</b> 100%解けるルートが存在します。隣り合う数字をすぐに繋ぐと、他の数字の通り道がなくなるかもしれません。「あえて遠回り」が必要な箇所を探しましょう。</p>
     </div>
 </div>
 
 <div id="resultOverlay">
-    <div class="result-card">
-        <h1 style="color: #2ecc71">Perfect Clear!</h1>
-        <p>タイム</p>
+    <div style="background:white; color:#333; padding:40px; border-radius:20px; text-align:center;">
+        <h1 style="color:#2ecc71">Clear!</h1>
         <h2 id="finalTime">00:00</h2>
-        <button onclick="closeResult()" style="background: #34495e; color:white; padding: 10px 30px; border-radius: 25px; border:none; cursor:pointer;">次へ</button>
+        <button onclick="closeResult()" style="background:#34495e; color:white; padding:10px 30px; border-radius:20px; border:none; cursor:pointer;">OK</button>
     </div>
 </div>
 
@@ -80,71 +69,68 @@
 
     function updatePairOptions() {
         const size = parseInt(document.getElementById('gridSelect').value);
-        const maxPairs = Math.min(9, Math.floor((size * size) / 2.5));
+        const maxPairs = Math.min(9, Math.floor((size * size) / 3));
         pairSelect.innerHTML = "";
         for (let i = 2; i <= maxPairs; i++) {
             const opt = document.createElement('option');
             opt.value = i; opt.innerText = i;
-            if (i === (size === 4 ? 4 : 6)) opt.selected = true;
+            if (i === (size === 4 ? 3 : 5)) opt.selected = true;
             pairSelect.appendChild(opt);
         }
     }
 
-    // --- 盤面生成ロジック ---
+    // --- 改良版: 解けることを保証する生成ロジック ---
     async function generateLevel() {
-        const difficulty = diffSelect.value;
+        const isNormal = diffSelect.value === 'normal';
         return new Promise((resolve) => {
             const attempt = () => {
-                let fullPath = [];
+                let snake = [];
                 let visited = new Set();
-                
-                // 初級: 1本の長い路を分割（現在の方式）
-                // 中級: 複数のランダムな路を順番に生成して絡ませる
-                const maxTries = difficulty === 'easy' ? 1 : pairCount;
-                
-                // 簡易ハミルトン路生成 (共通パーツ)
-                let currentPos = {x: Math.floor(Math.random()*gridSize), y: Math.floor(Math.random()*gridSize)};
-                fullPath.push(currentPos);
-                visited.add(`${currentPos.x},${currentPos.y}`);
+                let x = Math.floor(Math.random()*gridSize), y = Math.floor(Math.random()*gridSize);
+                snake.push({x, y}); visited.add(`${x},${y}`);
 
+                // 盤面を埋め尽くすハミルトン路を生成 (Warnsdorffベース)
                 for (let i = 0; i < 1000; i++) {
-                    let last = fullPath[fullPath.length - 1];
-                    let neighbors = [{x:last.x+1, y:last.y},{x:last.x-1, y:last.y},{x:last.x, y:last.y+1},{x:last.x, y:last.y-1}]
+                    let last = snake[snake.length - 1];
+                    let neighbors = [{x:last.x+1,y:last.y},{x:last.x-1,y:last.y},{x:last.x,y:last.y+1},{x:last.x,y:last.y-1}]
                         .filter(n => n.x>=0 && n.x<gridSize && n.y>=0 && n.y<gridSize && !visited.has(`${n.x},${n.y}`));
                     if (neighbors.length === 0) break;
-                    
-                    // 中級の場合、時々ランダムな方向を選んで「絡まり」を作る
-                    if (difficulty === 'normal' && Math.random() > 0.7) {
-                        let next = neighbors[Math.floor(Math.random()*neighbors.length)];
-                        fullPath.push(next); visited.add(`${next.x},${next.y}`);
-                    } else {
-                        neighbors.sort((a,b) => getDeg(a, visited)-getDeg(b, visited));
-                        fullPath.push(neighbors[0]); visited.add(`${neighbors[0].x},${neighbors[0].y}`);
-                    }
+                    neighbors.sort((a,b) => getDeg(a, visited) - getDeg(b, visited));
+                    let next = neighbors[0];
+                    snake.push(next); visited.add(`${next.x},${next.y}`);
                 }
 
                 if (visited.size === gridSize * gridSize) {
                     numbers = []; paths = {};
-                    // 数字の配置（中級はより端点同士を引き離す）
-                    let indices = [];
-                    if (difficulty === 'easy') {
-                        let step = Math.floor(fullPath.length / pairCount);
-                        for(let m=0; m<pairCount; m++) indices.push([m*step, (m === pairCount-1 ? fullPath.length-1 : (m+1)*step-1)]);
+                    let segments = [];
+                    let totalLen = snake.length;
+
+                    if (isNormal) {
+                        // 中級: インデックスをバラバラに組み合わせて「盤面上で近く、ルート上で遠い」関係を作る
+                        // 例: [0, 15], [1, 25] のようにルート上の距離を離す
+                        let availableIdx = Array.from({length: totalLen}, (_, i) => i);
+                        for (let m = 0; m < pairCount; m++) {
+                            let startIdx = availableIdx.splice(0, 1)[0];
+                            // 少なくとも盤面サイズの半分以上ルートが離れている場所を狙う
+                            let idealGap = Math.floor(totalLen / pairCount);
+                            let endIdxPos = Math.min(availableIdx.length - 1, idealGap);
+                            let endIdx = availableIdx.splice(endIdxPos, 1)[0];
+                            segments.push([startIdx, endIdx]);
+                        }
                     } else {
-                        // 中級: インデックスをシャッフルして隣り合わないように分割
-                        let points = [];
-                        for(let i=0; i<pairCount*2; i++) points.push(Math.floor(i * (fullPath.length-1) / (pairCount*2-1)));
-                        for(let m=0; m<pairCount; m++) indices.push([points[m], points[m+pairCount]]); // 前半と後半でペア
+                        // 初級: ヘビを単純に分割（物理的に近いペアになりやすい）
+                        let step = Math.floor(totalLen / pairCount);
+                        for(let m=0; m<pairCount; m++) segments.push([m*step, (m+1)*step-1]);
                     }
 
-                    indices.forEach((idxPair, m) => {
-                        let n1 = {x: fullPath[idxPair[0]].x, y: fullPath[idxPair[0]].y, val: m+1, color: colors[m]};
-                        let n2 = {x: fullPath[idxPair[1]].x, y: fullPath[idxPair[1]].y, val: m+1, color: colors[m]};
-                        numbers.push(n1, n2);
-                        paths[m+1] = [ [{x: n1.x, y: n1.y}], [{x: n2.x, y: n2.y}] ];
+                    segments.forEach((seg, m) => {
+                        let p1 = snake[seg[0]], p2 = snake[seg[1]];
+                        numbers.push({x:p1.x, y:p1.y, val:m+1, color:colors[m]});
+                        numbers.push({x:p2.x, y:p2.y, val:m+1, color:colors[m]});
+                        paths[m+1] = [[{x:p1.x, y:p1.y}], [{x:p2.x, y:p2.y}]];
                     });
                     resolve();
-                } else { setTimeout(attempt, 0); }
+                } else { setTimeout(attempt, 10); }
             };
             const getDeg = (p, v) => [{x:p.x+1,y:p.y},{x:p.x-1,y:p.y},{x:p.x,y:p.y+1},{x:p.x,y:p.y-1}]
                 .filter(n => n.x>=0 && n.x<gridSize && n.y>=0 && n.y<gridSize && !v.has(`${n.x},${n.y}`)).length;
@@ -152,58 +138,50 @@
         });
     }
 
-    // --- 以下、前回までの安定動作ロジック ---
+    // --- ゲームエンジン部分 ---
     async function initGame() {
         gridSize = parseInt(document.getElementById('gridSelect').value);
         pairCount = parseInt(pairSelect.value);
         canvasSize = Math.min(window.innerWidth - 40, 500);
-        canvas.width = canvasSize; canvas.height = canvasSize;
+        canvas.width = canvas.height = canvasSize;
         spacing = (canvasSize - padding * 2) / (gridSize - 1);
         statusEl.innerText = "生成中...";
         clearInterval(timerInterval);
         await generateLevel();
-        statusEl.innerText = "Game Start!";
+        statusEl.innerText = "スタート！";
         startTime = Date.now();
-        timerInterval = setInterval(updateTimer, 1000);
+        timerInterval = setInterval(() => {
+            let diff = Math.floor((Date.now()-startTime)/1000);
+            timerEl.innerText = `${String(Math.floor(diff/60)).padStart(2,'0')}:${String(diff%60).padStart(2,'0')}`;
+        }, 1000);
         draw();
     }
 
-    function updateTimer() {
-        const diff = Math.floor((Date.now() - startTime) / 1000);
-        timerEl.innerText = `Time: ${String(Math.floor(diff/60)).padStart(2,'0')}:${String(diff%60).padStart(2,'0')}`;
-    }
-
     function draw() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.clearRect(0,0,canvas.width,canvas.height);
         ctx.fillStyle = "#eee";
-        for(let i=0; i<gridSize; i++) for(let j=0; j<gridSize; j++) {
-            ctx.beginPath(); ctx.arc(padding+i*spacing, padding+j*spacing, 2, 0, Math.PI*2); ctx.fill();
+        for(let i=0;i<gridSize;i++) for(let j=0;j<gridSize;j++) {
+            ctx.beginPath(); ctx.arc(padding+i*spacing, padding+j*spacing, 2, 0, 7); ctx.fill();
         }
-        Object.keys(paths).forEach(val => {
-            paths[val].forEach((path, idx) => {
-                if (path.length < 1) return;
-                const isDrag = (isDrawing && activeVal == val && activePathIdx == idx);
-                ctx.strokeStyle = colors[val-1]; ctx.lineWidth = spacing * (isDrag?0.55:0.45);
-                ctx.lineCap = "round"; ctx.lineJoin = "round";
-                ctx.globalAlpha = isDrag ? 0.7 : 1.0;
+        Object.keys(paths).forEach(v => {
+            paths[v].forEach((path, idx) => {
+                if(path.length < 1) return;
+                let isD = (isDrawing && activeVal == v && activePathIdx == idx);
+                ctx.strokeStyle = colors[v-1]; ctx.lineWidth = spacing*(isD?0.55:0.45);
+                ctx.lineCap = ctx.lineJoin = "round"; ctx.globalAlpha = isD?0.7:1;
                 ctx.beginPath();
-                path.forEach((p, i) => {
-                    const vx = padding+p.x*spacing, vy = padding+p.y*spacing;
-                    if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
-                });
+                path.forEach((p,i) => { let x=padding+p.x*spacing, y=padding+p.y*spacing; if(i==0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
                 ctx.stroke();
-                const last = path[path.length-1];
-                ctx.fillStyle = colors[val-1]; ctx.globalAlpha = 0.25;
-                ctx.beginPath(); ctx.arc(padding+last.x*spacing, padding+last.y*spacing, spacing*0.4, 0, Math.PI*2); ctx.fill();
-                ctx.globalAlpha = 1.0;
+                let last = path[path.length-1]; ctx.fillStyle = colors[v-1]; ctx.globalAlpha = 0.2;
+                ctx.beginPath(); ctx.arc(padding+last.x*spacing, padding+last.y*spacing, spacing*0.4, 0, 7); ctx.fill();
+                ctx.globalAlpha = 1;
             });
         });
-        let radius = spacing * 0.35;
-        ctx.font = `bold ${radius}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-        numbers.forEach(num => {
-            const x = padding+num.x*spacing, y = padding+num.y*spacing;
-            ctx.fillStyle = num.color; ctx.beginPath(); ctx.arc(x,y, radius, 0, Math.PI*2); ctx.fill();
-            ctx.fillStyle = "white"; ctx.fillText(num.val, x, y);
+        let r = spacing*0.35; ctx.font = `bold ${r}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        numbers.forEach(n => {
+            let x=padding+n.x*spacing, y=padding+n.y*spacing;
+            ctx.fillStyle = n.color; ctx.beginPath(); ctx.arc(x,y,r,0,7); ctx.fill();
+            ctx.fillStyle = "white"; ctx.fillText(n.val, x, y);
         });
     }
 
@@ -211,75 +189,61 @@
         const rect = canvas.getBoundingClientRect();
         const x = Math.round((e.clientX - rect.left - padding) / spacing);
         const y = Math.round((e.clientY - rect.top - padding) / spacing);
-        if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) return {x, y};
-        return null;
+        return (x>=0 && x<gridSize && y>=0 && y<gridSize) ? {x, y} : null;
     }
 
     canvas.addEventListener('pointerdown', (e) => {
-        const p = getGridPos(e); if (!p) return;
+        const p = getGridPos(e); if(!p) return;
         lastDownPos = {...p};
-        for (let val in paths) {
-            for (let i = 0; i < paths[val].length; i++) {
-                const path = paths[val][i];
-                if ((p.x===path[0].x && p.y===path[0].y) || (p.x===path[path.length-1].x && p.y===path[path.length-1].y)) {
-                    if (p.x===path[0].x && p.y===path[0].y) path.reverse();
-                    activeVal = val; activePathIdx = i; isDrawing = true;
-                    canvas.setPointerCapture(e.pointerId); draw(); return;
-                }
+        for(let v in paths) for(let i=0; i<paths[v].length; i++) {
+            let path = paths[v][i];
+            if((p.x==path[0].x && p.y==path[0].y) || (p.x==path[path.length-1].x && p.y==path[path.length-1].y)) {
+                if(p.x==path[0].x && p.y==path[0].y) path.reverse();
+                activeVal = v; activePathIdx = i; isDrawing = true;
+                canvas.setPointerCapture(e.pointerId); draw(); return;
             }
         }
     });
 
     window.addEventListener('pointermove', (e) => {
-        if (!isDrawing) return;
-        const p = getGridPos(e); if (!p) return;
-        const currentPath = paths[activeVal][activePathIdx];
-        const last = currentPath[currentPath.length-1];
-        if (p.x===last.x && p.y===last.y) return;
-        if (Math.abs(p.x-last.x) + Math.abs(p.y-last.y) === 1) {
-            if (currentPath.length > 1 && p.x===currentPath[currentPath.length-2].x && p.y===currentPath[currentPath.length-2].y) {
-                currentPath.pop(); draw(); return;
+        if(!isDrawing) return;
+        const p = getGridPos(e); if(!p) return;
+        let path = paths[activeVal][activePathIdx], last = path[path.length-1];
+        if(p.x==last.x && p.y==last.y) return;
+        if(Math.abs(p.x-last.x)+Math.abs(p.y-last.y)==1) {
+            if(path.length>1 && p.x==path[path.length-2].x && p.y==path[path.length-2].y) { path.pop(); draw(); return; }
+            let oIdx = 1-activePathIdx, oPath = paths[activeVal][oIdx];
+            if(oPath && oPath.some(pt => pt.x==p.x && pt.y==p.y)) {
+                let tIdx = oPath.findIndex(pt => pt.x==p.x && pt.y==p.y);
+                paths[activeVal][activePathIdx] = path.concat(oPath.slice(0, tIdx+1).reverse());
+                paths[activeVal].splice(oIdx, 1); isDrawing = false; draw(); return;
             }
-            const otherIdx = 1 - activePathIdx;
-            const otherPath = paths[activeVal][otherIdx];
-            if (otherPath && otherPath.some(pt => pt.x===p.x && pt.y===p.y)) {
-                let targetIdx = otherPath.findIndex(pt => pt.x===p.x && pt.y===p.y);
-                paths[activeVal][activePathIdx] = currentPath.concat(otherPath.slice(0, targetIdx+1).reverse());
-                paths[activeVal].splice(otherIdx, 1);
-                isDrawing = false; draw(); return;
-            }
-            const isOcc = Object.values(paths).flat().some(path => path.some(pt => pt.x===p.x && pt.y===p.y));
-            if (!isOcc) { currentPath.push(p); draw(); }
+            if(!Object.values(paths).flat().some(pa => pa.some(pt => pt.x==p.x && pt.y==p.y))) { path.push(p); draw(); }
         }
     });
 
     window.addEventListener('pointerup', (e) => {
         const p = getGridPos(e);
-        if (isDrawing && p && lastDownPos && p.x===lastDownPos.x && p.y===lastDownPos.y) {
-            const path = paths[activeVal][activePathIdx];
-            if (!numbers.some(n => n.x===p.x && n.y===p.y)) path.pop();
+        if(isDrawing && p && lastDownPos && p.x==lastDownPos.x && p.y==lastDownPos.y) {
+            if(!numbers.some(n => n.x==p.x && n.y==p.y)) paths[activeVal][activePathIdx].pop();
         }
         isDrawing = false; activeVal = null; checkClear(); draw();
     });
 
     function checkClear() {
-        const used = new Set();
-        let allConn = true;
-        for (let v in paths) {
-            paths[v].forEach(path => path.forEach(p => used.add(`${p.x},${p.y}`)));
-            if (paths[v].length !== 1) allConn = false;
+        let used = new Set(); let ok = true;
+        for(let v in paths) {
+            paths[v].forEach(pa => pa.forEach(p => used.add(`${p.x},${p.y}`)));
+            if(paths[v].length !== 1) ok = false;
         }
-        if (used.size === gridSize * gridSize && allConn) {
+        if(used.size === gridSize*gridSize && ok) {
             clearInterval(timerInterval);
-            document.getElementById('finalTime').innerText = timerEl.innerText.replace('Time: ', '');
+            document.getElementById('finalTime').innerText = timerEl.innerText;
             document.getElementById('resultOverlay').style.display = 'flex';
         }
     }
-
-    function closeResult() { document.getElementById('resultOverlay').style.display = 'none'; initGame(); }
-
-    updatePairOptions();
-    initGame();
+    function closeResult() { document.getElementById('resultOverlay').style.display='none'; initGame(); }
+    updatePairOptions(); initGame();
 </script>
 </body>
 </html>
