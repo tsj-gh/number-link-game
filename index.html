@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Guaranteed Solvable</title>
+    <title>Number Connect - Strict Rules</title>
     <style>
         :root { --main-bg: #f8f9fa; --panel-bg: #ffffff; --accent: #34495e; }
         body { font-family: sans-serif; background: var(--main-bg); margin: 0; display: flex; flex-direction: column; align-items: center; touch-action: none; }
@@ -22,8 +22,8 @@
 
 <div class="config">
     難易度: <select id="diffSelect">
-        <option value="easy">初級 (最短経路)</option>
-        <option value="normal" selected>中級 (迂回必須)</option>
+        <option value="easy">初級</option>
+        <option value="normal" selected>中級</option>
     </select>
     サイズ: <select id="gridSelect" onchange="updatePairOptions()">
         <option value="4">4x4</option><option value="6" selected>6x6</option>
@@ -39,8 +39,12 @@
         <canvas id="gameCanvas"></canvas>
     </div>
     <div class="side-panel">
-        <h3>💡 攻略のヒント</h3>
-        <p><b>中級モード:</b> 100%解けるルートが存在します。隣り合う数字をすぐに繋ぐと、他の数字の通り道がなくなるかもしれません。「あえて遠回り」が必要な箇所を探しましょう。</p>
+        <h3>💡 厳格ルール</h3>
+        <ul>
+            <li>数字は必ず<b>線の端</b>になります。通り抜けはできません。</li>
+            <li>同じ数字の2つの端を繋ぐと1本の線になります。</li>
+            <li>全てのマスを埋めればクリア！</li>
+        </ul>
     </div>
 </div>
 
@@ -79,7 +83,6 @@
         }
     }
 
-    // --- 改良版: 解けることを保証する生成ロジック ---
     async function generateLevel() {
         const isNormal = diffSelect.value === 'normal';
         return new Promise((resolve) => {
@@ -89,40 +92,31 @@
                 let x = Math.floor(Math.random()*gridSize), y = Math.floor(Math.random()*gridSize);
                 snake.push({x, y}); visited.add(`${x},${y}`);
 
-                // 盤面を埋め尽くすハミルトン路を生成 (Warnsdorffベース)
                 for (let i = 0; i < 1000; i++) {
                     let last = snake[snake.length - 1];
                     let neighbors = [{x:last.x+1,y:last.y},{x:last.x-1,y:last.y},{x:last.x,y:last.y+1},{x:last.x,y:last.y-1}]
                         .filter(n => n.x>=0 && n.x<gridSize && n.y>=0 && n.y<gridSize && !visited.has(`${n.x},${n.y}`));
                     if (neighbors.length === 0) break;
                     neighbors.sort((a,b) => getDeg(a, visited) - getDeg(b, visited));
-                    let next = neighbors[0];
-                    snake.push(next); visited.add(`${next.x},${next.y}`);
+                    snake.push(neighbors[0]); visited.add(`${neighbors[0].x},${neighbors[0].y}`);
                 }
 
                 if (visited.size === gridSize * gridSize) {
                     numbers = []; paths = {};
                     let segments = [];
-                    let totalLen = snake.length;
-
                     if (isNormal) {
-                        // 中級: インデックスをバラバラに組み合わせて「盤面上で近く、ルート上で遠い」関係を作る
-                        // 例: [0, 15], [1, 25] のようにルート上の距離を離す
-                        let availableIdx = Array.from({length: totalLen}, (_, i) => i);
+                        let availableIdx = Array.from({length: snake.length}, (_, i) => i);
                         for (let m = 0; m < pairCount; m++) {
                             let startIdx = availableIdx.splice(0, 1)[0];
-                            // 少なくとも盤面サイズの半分以上ルートが離れている場所を狙う
-                            let idealGap = Math.floor(totalLen / pairCount);
+                            let idealGap = Math.floor(snake.length / pairCount);
                             let endIdxPos = Math.min(availableIdx.length - 1, idealGap);
                             let endIdx = availableIdx.splice(endIdxPos, 1)[0];
                             segments.push([startIdx, endIdx]);
                         }
                     } else {
-                        // 初級: ヘビを単純に分割（物理的に近いペアになりやすい）
-                        let step = Math.floor(totalLen / pairCount);
+                        let step = Math.floor(snake.length / pairCount);
                         for(let m=0; m<pairCount; m++) segments.push([m*step, (m+1)*step-1]);
                     }
-
                     segments.forEach((seg, m) => {
                         let p1 = snake[seg[0]], p2 = snake[seg[1]];
                         numbers.push({x:p1.x, y:p1.y, val:m+1, color:colors[m]});
@@ -138,7 +132,6 @@
         });
     }
 
-    // --- ゲームエンジン部分 ---
     async function initGame() {
         gridSize = parseInt(document.getElementById('gridSelect').value);
         pairCount = parseInt(pairSelect.value);
@@ -172,8 +165,13 @@
                 ctx.beginPath();
                 path.forEach((p,i) => { let x=padding+p.x*spacing, y=padding+p.y*spacing; if(i==0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
                 ctx.stroke();
-                let last = path[path.length-1]; ctx.fillStyle = colors[v-1]; ctx.globalAlpha = 0.2;
-                ctx.beginPath(); ctx.arc(padding+last.x*spacing, padding+last.y*spacing, spacing*0.4, 0, 7); ctx.fill();
+                // 可動端点のハイライト（数字以外の端点、または長さ1のパス＝数字のみ）
+                let last = path[path.length-1];
+                let isNum = numbers.some(n => n.x == last.x && n.y == last.y && n.val == v);
+                if (!isNum || path.length === 1) {
+                    ctx.fillStyle = colors[v-1]; ctx.globalAlpha = 0.2;
+                    ctx.beginPath(); ctx.arc(padding+last.x*spacing, padding+last.y*spacing, spacing*0.4, 0, 7); ctx.fill();
+                }
                 ctx.globalAlpha = 1;
             });
         });
@@ -195,12 +193,21 @@
     canvas.addEventListener('pointerdown', (e) => {
         const p = getGridPos(e); if(!p) return;
         lastDownPos = {...p};
-        for(let v in paths) for(let i=0; i<paths[v].length; i++) {
-            let path = paths[v][i];
-            if((p.x==path[0].x && p.y==path[0].y) || (p.x==path[path.length-1].x && p.y==path[path.length-1].y)) {
-                if(p.x==path[0].x && p.y==path[0].y) path.reverse();
-                activeVal = v; activePathIdx = i; isDrawing = true;
-                canvas.setPointerCapture(e.pointerId); draw(); return;
+        for(let v in paths) {
+            for(let i=0; i<paths[v].length; i++) {
+                let path = paths[v][i];
+                let last = path[path.length-1];
+                // 端点を触ったか判定
+                if(p.x == last.x && p.y == last.y) {
+                    activeVal = v; activePathIdx = i; isDrawing = true;
+                    canvas.setPointerCapture(e.pointerId); draw(); return;
+                }
+                // 初期の数字（長さ1）ではなく、逆側（開始点）を触った場合のリバース
+                let first = path[0];
+                if(p.x == first.x && p.y == first.y && path.length > 1) {
+                    path.reverse(); activeVal = v; activePathIdx = i; isDrawing = true;
+                    canvas.setPointerCapture(e.pointerId); draw(); return;
+                }
             }
         }
     });
@@ -208,23 +215,54 @@
     window.addEventListener('pointermove', (e) => {
         if(!isDrawing) return;
         const p = getGridPos(e); if(!p) return;
-        let path = paths[activeVal][activePathIdx], last = path[path.length-1];
+        let path = paths[activeVal][activePathIdx];
+        let last = path[path.length-1];
+
         if(p.x==last.x && p.y==last.y) return;
-        if(Math.abs(p.x-last.x)+Math.abs(p.y-last.y)==1) {
-            if(path.length>1 && p.x==path[path.length-2].x && p.y==path[path.length-2].y) { path.pop(); draw(); return; }
-            let oIdx = 1-activePathIdx, oPath = paths[activeVal][oIdx];
-            if(oPath && oPath.some(pt => pt.x==p.x && pt.y==p.y)) {
-                let tIdx = oPath.findIndex(pt => pt.x==p.x && pt.y==p.y);
-                paths[activeVal][activePathIdx] = path.concat(oPath.slice(0, tIdx+1).reverse());
-                paths[activeVal].splice(oIdx, 1); isDrawing = false; draw(); return;
+
+        if(Math.abs(p.x-last.x) + Math.abs(p.y-last.y) == 1) {
+            // 戻る処理
+            if(path.length>1 && p.x==path[path.length-2].x && p.y==path[path.length-2].y) {
+                path.pop(); draw(); return;
             }
-            if(!Object.values(paths).flat().some(pa => pa.some(pt => pt.x==p.x && pt.y==p.y))) { path.push(p); draw(); }
+
+            // --- 新規ルール：数字マスの通過チェック ---
+            // 1. 既に線がある場所は不可（合流判定以外）
+            // 2. 自分以外の数字マスは不可
+            // 3. 自分のペアの数字マスは「合流」としてのみ許可
+            
+            const targetNum = numbers.find(n => n.x === p.x && n.y === p.y);
+            
+            // 合流判定（同じ数字のもう一方のパスの端点に触れたか）
+            let otherIdx = 1 - activePathIdx;
+            let otherPath = paths[activeVal][otherIdx];
+            if(otherPath && otherPath[otherPath.length-1].x === p.x && otherPath[otherPath.length-1].y === p.y) {
+                paths[activeVal][activePathIdx] = path.concat(otherPath.reverse());
+                paths[activeVal].splice(otherIdx, 1);
+                isDrawing = false; draw(); return;
+            }
+
+            // 通過禁止：既にどこかのパス（自分含む）に使われているマス
+            const isOcc = Object.values(paths).flat().some(pa => pa.some(pt => pt.x==p.x && pt.y==p.y));
+            if(isOcc) return;
+
+            // 通過禁止：数字マス（合流以外でここに到達したなら、そこは新たな端点になるが通り抜けはできない）
+            if(targetNum) {
+                // 自分以外の数字なら拒否
+                if(targetNum.val != activeVal) return;
+                // 自分のペアの数字なら到達可能（ただしそこで線は止まる）
+                path.push(p); isDrawing = false; draw(); return;
+            }
+
+            // 何もなければ進む
+            path.push(p); draw();
         }
     });
 
     window.addEventListener('pointerup', (e) => {
         const p = getGridPos(e);
         if(isDrawing && p && lastDownPos && p.x==lastDownPos.x && p.y==lastDownPos.y) {
+            // タップ消去：数字の上でなければ消す
             if(!numbers.some(n => n.x==p.x && n.y==p.y)) paths[activeVal][activePathIdx].pop();
         }
         isDrawing = false; activeVal = null; checkClear(); draw();
@@ -233,8 +271,14 @@
     function checkClear() {
         let used = new Set(); let ok = true;
         for(let v in paths) {
-            paths[v].forEach(pa => pa.forEach(p => used.add(`${p.x},${p.y}`)));
-            if(paths[v].length !== 1) ok = false;
+            if(paths[v].length !== 1) { ok = false; continue; }
+            let path = paths[v][0];
+            // 両端が数字であるかチェック
+            let p1 = path[0], p2 = path[path.length-1];
+            let n1 = numbers.find(n => n.x==p1.x && n.y==p1.y && n.val == v);
+            let n2 = numbers.find(n => n.x==p2.x && n.y==p2.y && n.val == v);
+            if(!n1 || !n2) ok = false;
+            path.forEach(pt => used.add(`${pt.x},${pt.y}`));
         }
         if(used.size === gridSize*gridSize && ok) {
             clearInterval(timerInterval);
