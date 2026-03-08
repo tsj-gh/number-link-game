@@ -3,111 +3,159 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Grid</title>
+    <title>Number Connect - Logic</title>
     <style>
         body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 20px; }
         canvas { background: #fff; border: 1px solid #ddd; display: block; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); touch-action: none; }
-        .controls { margin-top: 20px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; border: 1px solid #ccc; background: white; }
+        .info { margin: 10px; font-weight: bold; color: #555; height: 24px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; border: 1px solid #ccc; background: white; margin-top: 20px; }
     </style>
 </head>
 <body>
     <h1>同じ数字を繋ごう</h1>
+    <div id="status" class="info">数字から数字へ繋いでね！</div>
     <canvas id="gameCanvas"></canvas>
-    <div class="controls">
-        <button onclick="initGame()">リセット</button>
-    </div>
+    <button onclick="initGame()">リセット</button>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
+        const statusEl = document.getElementById('status');
         
         const gridSize = 4;
         const padding = 50;
-        let spacing;
+        let spacing, canvasSize;
 
-        // 数字の配置データ（x, y, 数字）
         const numbers = [
-            {x: 0, y: 0, val: 1}, {x: 3, y: 3, val: 1},
-            {x: 0, y: 3, val: 2}, {x: 2, y: 1, val: 2}
+            {x: 0, y: 0, val: 1, color: "#ff4757"}, {x: 3, y: 3, val: 1, color: "#ff4757"},
+            {x: 0, y: 3, val: 2, color: "#2e86de"}, {x: 2, y: 1, val: 2, color: "#2e86de"}
         ];
 
+        let finishedLines = []; // 確定した線
+        let currentPath = [];   // 今引いている途中の線
+        let startNum = null;    // 描き始めた数字の情報
+        let isDrawing = false;
+
         function initGame() {
-            const size = Math.min(window.innerWidth - 40, 400);
-            canvas.width = size;
-            canvas.height = size;
-            spacing = (size - padding * 2) / (gridSize - 1);
-            drawStage();
+            canvasSize = Math.min(window.innerWidth - 40, 400);
+            canvas.width = canvasSize;
+            canvas.height = canvasSize;
+            spacing = (canvasSize - padding * 2) / (gridSize - 1);
+            finishedLines = [];
+            statusEl.innerText = "数字から数字へ繋いでね！";
+            draw();
         }
 
-        function drawStage() {
+        // 座標からどの数字の上にいるか判定する関数
+        function getNumberAt(p) {
+            return numbers.find(num => {
+                const nx = padding + num.x * spacing;
+                const ny = padding + num.y * spacing;
+                const dist = Math.hypot(p.x - nx, p.y - ny);
+                return dist < 25; // 当たり判定の広さ
+            });
+        }
+
+        function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-            // 1. グリッドの点を描画
+            // 1. グリッドの点
+            ctx.fillStyle = "#eee";
             for (let i = 0; i < gridSize; i++) {
                 for (let j = 0; j < gridSize; j++) {
-                    const x = padding + i * spacing;
-                    const y = padding + j * spacing;
-                    ctx.fillStyle = "#eee";
                     ctx.beginPath();
-                    ctx.arc(x, y, 5, 0, Math.PI * 2);
+                    ctx.arc(padding + i * spacing, padding + j * spacing, 5, 0, Math.PI * 2);
                     ctx.fill();
                 }
             }
 
-            // 2. 数字を描画
+            // 2. 確定した線を描画
+            finishedLines.forEach(line => {
+                ctx.strokeStyle = line.color;
+                ctx.lineWidth = 10;
+                ctx.beginPath();
+                ctx.moveTo(line.path[0].x, line.path[0].y);
+                line.path.forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.stroke();
+            });
+
+            // 3. 今引いている線を描画
+            if (isDrawing && currentPath.length > 0) {
+                ctx.strokeStyle = startNum.color;
+                ctx.globalAlpha = 0.5;
+                ctx.lineWidth = 10;
+                ctx.beginPath();
+                ctx.moveTo(currentPath[0].x, currentPath[0].y);
+                currentPath.forEach(p => ctx.lineTo(p.x, p.y));
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
+            }
+
+            // 4. 数字の描画
             ctx.font = "bold 24px Arial";
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
-            
             numbers.forEach(num => {
                 const x = padding + num.x * spacing;
                 const y = padding + num.y * spacing;
-                
-                // 数字の背景円
-                ctx.fillStyle = num.val === 1 ? "#ff4757" : "#2e86de";
-                ctx.beginPath();
-                ctx.arc(x, y, 18, 0, Math.PI * 2);
-                ctx.fill();
-                
-                // 文字
+                ctx.fillStyle = num.color;
+                ctx.beginPath(); ctx.arc(x, y, 18, 0, Math.PI * 2); ctx.fill();
                 ctx.fillStyle = "white";
                 ctx.fillText(num.val, x, y);
             });
         }
 
-        // お絵かき機能（前回と同じものを少し調整）
-        let drawing = false;
         function getPos(e) {
             const rect = canvas.getBoundingClientRect();
             const clientX = e.clientX || (e.touches && e.touches[0].clientX);
             const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-            return {
-                x: clientX - rect.left,
-                y: clientY - rect.top
-            };
+            return { x: clientX - rect.left, y: clientY - rect.top };
         }
 
-        canvas.addEventListener('mousedown', (e) => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
-        canvas.addEventListener('touchstart', (e) => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
-        window.addEventListener('mouseup', () => drawing = false);
-        window.addEventListener('touchend', () => drawing = false);
+        canvas.addEventListener('mousedown', startAction);
+        canvas.addEventListener('touchstart', startAction);
 
-        canvas.addEventListener('mousemove', (e) => {
-            if (!drawing) return;
+        function startAction(e) {
             const p = getPos(e);
-            ctx.strokeStyle = "#333";
-            ctx.lineWidth = 3;
-            ctx.lineTo(p.x, p.y);
-            ctx.stroke();
-        });
-        canvas.addEventListener('touchmove', (e) => {
-            if (!drawing) return;
-            e.preventDefault();
+            const num = getNumberAt(p);
+            if (num) {
+                isDrawing = true;
+                startNum = num;
+                currentPath = [p];
+            }
+        }
+
+        window.addEventListener('mousemove', moveAction);
+        canvas.addEventListener('touchmove', moveAction);
+
+        function moveAction(e) {
+            if (!isDrawing) return;
+            if (e.type === 'touchmove') e.preventDefault();
             const p = getPos(e);
-            ctx.lineTo(p.x, p.y);
-            ctx.stroke();
-        });
+            currentPath.push(p);
+            draw();
+        }
+
+        window.addEventListener('mouseup', endAction);
+        window.addEventListener('touchend', endAction);
+
+        function endAction(e) {
+            if (!isDrawing) return;
+            const p = currentPath[currentPath.length - 1];
+            const endNum = getNumberAt(p);
+
+            // 同じ数字、かつ違う場所の円に到達したか？
+            if (endNum && endNum.val === startNum.val && endNum !== startNum) {
+                finishedLines.push({ path: currentPath, color: startNum.color });
+                statusEl.innerText = "成功！";
+            } else {
+                statusEl.innerText = "失敗... 同じ数字まで繋いでね";
+            }
+            
+            isDrawing = false;
+            currentPath = [];
+            draw();
+        }
 
         initGame();
     </script>
