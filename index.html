@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Multi-Connect Puzzle</title>
+    <title>Multi-Connect Puzzle Fix</title>
     <style>
         body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 10px; }
         .config { background: #eee; padding: 10px; margin-bottom: 10px; font-size: 14px; }
@@ -70,7 +70,6 @@
                     path = [{x: startX, y: startY}];
                     let visited = new Set([`${startX},${startY}`]);
                     
-                    // 1本のハミルトン路を生成
                     for (let i = 0; i < 500; i++) {
                         let last = path[path.length - 1];
                         let neighbors = [{x:last.x+1, y:last.y},{x:last.x-1, y:last.y},{x:last.x, y:last.y+1},{x:last.x, y:last.y-1}]
@@ -82,7 +81,6 @@
                     }
 
                     if (visited.size === gridSize * gridSize) {
-                        // 成功！pathをpairCount個に等分に近い形で分割
                         numbers = [];
                         let step = Math.floor(path.length / pairCount);
                         for(let m=0; m < pairCount; m++) {
@@ -116,13 +114,12 @@
             
             clearInterval(loadingInterval);
             document.getElementById('resetBtn').disabled = false;
-            statusEl.innerText = `${gridSize}x${gridSize} (${pairCount}ペア) - 全マス埋めて！`;
+            statusEl.innerText = `${gridSize}x${gridSize} (${pairCount}ペア) - 全マス埋めてね！`;
             draw();
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // 点の描画
             ctx.fillStyle = "#ddd";
             for(let i=0; i<gridSize; i++) {
                 for(let j=0; j<gridSize; j++) {
@@ -141,7 +138,6 @@
             finishedLines.forEach(l => drawPath(l.path, l.color));
             if (isDrawing) drawPath(currentPath, startNum.color, 0.5);
             
-            // 数字のサイズをグリッドに合わせて調整
             let radius = spacing * 0.35;
             ctx.font = `bold ${radius}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
             numbers.forEach(num => {
@@ -151,28 +147,29 @@
             });
         }
 
-        // --- 操作ロジック ---
+        // --- 修正された統合操作ロジック (Pointer Events) ---
         function getGridPos(e) {
             const rect = canvas.getBoundingClientRect();
-            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
-            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
-            const x = Math.round((clientX - rect.left - padding) / spacing);
-            const y = Math.round((clientY - rect.top - padding) / spacing);
+            // PointerEventなら e.clientX でマウス・タッチ両方いけます
+            const x = Math.round((e.clientX - rect.left - padding) / spacing);
+            const y = Math.round((e.clientY - rect.top - padding) / spacing);
             if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) return {x, y};
             return null;
         }
 
-        canvas.addEventListener('touchstart', (e) => {
+        canvas.addEventListener('pointerdown', (e) => {
             const p = getGridPos(e); if (!p) return;
             const num = numbers.find(n => n.x === p.x && n.y === p.y);
             if (num) {
+                canvas.setPointerCapture(e.pointerId); // ドラッグが外れても追跡
                 finishedLines = finishedLines.filter(l => l.val !== num.val);
                 isDrawing = true; startNum = num; currentPath = [{x: p.x, y: p.y}];
+                draw();
             }
         });
 
-        window.addEventListener('touchmove', (e) => {
-            if (!isDrawing) return; e.preventDefault();
+        canvas.addEventListener('pointermove', (e) => {
+            if (!isDrawing) return;
             const p = getGridPos(e); if (!p) return;
             const last = currentPath[currentPath.length - 1];
             if ((Math.abs(p.x - last.x) + Math.abs(p.y - last.y)) === 1) {
@@ -185,10 +182,11 @@
                     }
                 }
             }
-        }, {passive: false});
+        });
 
-        window.addEventListener('touchend', () => {
+        canvas.addEventListener('pointerup', (e) => {
             if (!isDrawing) return;
+            canvas.releasePointerCapture(e.pointerId);
             const last = currentPath[currentPath.length - 1];
             const endNum = numbers.find(n => n.x === last.x && n.y === last.y);
             if (endNum && endNum.val === startNum.val && (endNum.x !== startNum.x || endNum.y !== startNum.y)) {
