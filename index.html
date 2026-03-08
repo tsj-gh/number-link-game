@@ -3,31 +3,45 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Pro Generator</title>
+    <title>Multi-Connect Puzzle</title>
     <style>
-        body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 20px; }
+        body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 10px; }
+        .config { background: #eee; padding: 10px; margin-bottom: 10px; font-size: 14px; }
         canvas { background: #fff; border: 1px solid #ddd; display: block; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); touch-action: none; border-radius: 8px; }
-        .info { margin: 10px; font-weight: bold; color: #555; min-height: 24px; font-size: 1rem; }
-        .controls { margin-top: 20px; }
-        button { padding: 12px 24px; font-size: 16px; cursor: pointer; border-radius: 30px; border: none; background: #34495e; color: white; font-weight: bold; box-shadow: 0 4px 0 #2c3e50; }
-        button:active { transform: translateY(2px); box-shadow: 0 2px 0 #2c3e50; }
+        .info { margin: 10px; font-weight: bold; color: #555; min-height: 24px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 20px; border: none; background: #34495e; color: white; font-weight: bold; }
+        select { padding: 5px; margin: 0 5px; border-radius: 5px; }
     </style>
 </head>
 <body>
-    <h1>一筆書きパズル (4x4)</h1>
-    <div id="status" class="info">準備中...</div>
-    <canvas id="gameCanvas"></canvas>
-    <div class="controls">
-        <button id="resetBtn" onclick="initGame()">新しい問題を作る</button>
+    <div class="config">
+        サイズ: <select id="gridSelect">
+            <option value="4" selected>4x4</option>
+            <option value="5">5x5</option>
+            <option value="6">6x6</option>
+            <option value="8">8x8</option>
+            <option value="10">10x10</option>
+        </select>
+        ペア数: <select id="pairSelect">
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+            <option value="6">6</option>
+            <option value="9">9</option>
+        </select>
+        <button id="resetBtn" onclick="initGame()">生成</button>
     </div>
+
+    <div id="status" class="info">設定を選んで生成してね</div>
+    <canvas id="gameCanvas"></canvas>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         const statusEl = document.getElementById('status');
         
-        const gridSize = 4;
-        const padding = 50;
+        let gridSize, pairCount;
+        const padding = 40;
         let spacing, canvasSize;
 
         let numbers = [];
@@ -37,105 +51,87 @@
         let startNum = null;
         let loadingInterval;
 
-        // --- アニメーション管理 ---
+        const colors = ["#ff4757", "#2e86de", "#2ed573", "#ffa502", "#a29bfe", "#e17055", "#00cec9", "#6c5ce7", "#fdcb6e"];
+
         function startLoadingAnim() {
             let dots = 0;
             loadingInterval = setInterval(() => {
                 dots = (dots + 1) % 4;
                 statusEl.innerText = "生成中" + ".".repeat(dots);
-            }, 500);
+            }, 300);
         }
 
-        function stopLoadingAnim() {
-            clearInterval(loadingInterval);
-        }
-
-        // --- 盤面生成ロジック (Backtrackingで効率化) ---
         async function generateLevel() {
             return new Promise((resolve) => {
                 const attempt = () => {
                     let path = [];
-                    // スタート地点をランダムに決定
                     let startX = Math.floor(Math.random() * gridSize);
                     let startY = Math.floor(Math.random() * gridSize);
                     path = [{x: startX, y: startY}];
                     let visited = new Set([`${startX},${startY}`]);
                     
-                    // 最大200歩のランダムウォーク（4x4なら十分）
-                    for (let i = 0; i < 100; i++) {
+                    // 1本のハミルトン路を生成
+                    for (let i = 0; i < 500; i++) {
                         let last = path[path.length - 1];
-                        let neighbors = [
-                            {x: last.x+1, y: last.y}, {x: last.x-1, y: last.y},
-                            {x: last.x, y: last.y+1}, {x: last.x, y: last.y-1}
-                        ].filter(n => 
-                            n.x >= 0 && n.x < gridSize && n.y >= 0 && n.y < gridSize &&
-                            !visited.has(`${n.x},${n.y}`)
-                        );
-
+                        let neighbors = [{x:last.x+1, y:last.y},{x:last.x-1, y:last.y},{x:last.x, y:last.y+1},{x:last.x, y:last.y-1}]
+                            .filter(n => n.x>=0 && n.x<gridSize && n.y>=0 && n.y<gridSize && !visited.has(`${n.x},${n.y}`));
                         if (neighbors.length === 0) break;
-                        
-                        // 次の地点の選択肢の中で「行き止まり」が少ない方を選ぶ（Warnsdorffの規則の簡易版）
-                        neighbors.sort((a, b) => {
-                            const getDegree = (p) => [
-                                {x: p.x+1, y: p.y}, {x: p.x-1, y: p.y}, {x: p.x, y: p.y+1}, {x: p.x, y: p.y-1}
-                            ].filter(nn => nn.x>=0 && nn.x<gridSize && nn.y>=0 && nn.y<gridSize && !visited.has(`${nn.x},${nn.y}`)).length;
-                            return getDegree(a) - getDegree(b);
-                        });
-
-                        let next = neighbors[0]; // 最も選択肢が狭まる方を先に埋める
-                        path.push(next);
-                        visited.add(`${next.x},${next.y}`);
+                        neighbors.sort((a,b) => getDeg(a, visited)-getDeg(b, visited));
+                        let next = neighbors[0];
+                        path.push(next); visited.add(`${next.x},${next.y}`);
                     }
 
                     if (visited.size === gridSize * gridSize) {
-                        const split = 7 + Math.floor(Math.random() * 2); 
-                        numbers = [
-                            {x: path[0].x, y: path[0].y, val: 1, color: "#ff4757"},
-                            {x: path[split].x, y: path[split].y, val: 1, color: "#ff4757"},
-                            {x: path[split+1].x, y: path[split+1].y, val: 2, color: "#2e86de"},
-                            {x: path[gridSize*gridSize-1].x, y: path[gridSize*gridSize-1].y, val: 2, color: "#2e86de"}
-                        ];
+                        // 成功！pathをpairCount個に等分に近い形で分割
+                        numbers = [];
+                        let step = Math.floor(path.length / pairCount);
+                        for(let m=0; m < pairCount; m++) {
+                            let sIdx = m * step;
+                            let eIdx = (m === pairCount - 1) ? path.length - 1 : (m + 1) * step - 1;
+                            numbers.push({x: path[sIdx].x, y: path[sIdx].y, val: m+1, color: colors[m]});
+                            numbers.push({x: path[eIdx].x, y: path[eIdx].y, val: m+1, color: colors[m]});
+                        }
                         resolve();
-                    } else {
-                        setTimeout(attempt, 10); // 少し間を空けて再試行
-                    }
+                    } else { setTimeout(attempt, 0); }
                 };
+                const getDeg = (p, v) => [{x:p.x+1,y:p.y},{x:p.x-1,y:p.y},{x:p.x,y:p.y+1},{x:p.x,y:p.y-1}]
+                    .filter(n => n.x>=0 && n.x<gridSize && n.y>=0 && n.y<gridSize && !v.has(`${n.x},${n.y}`)).length;
                 attempt();
             });
         }
 
         async function initGame() {
-            canvasSize = Math.min(window.innerWidth - 40, 400);
-            canvas.width = canvasSize;
-            canvas.height = canvasSize;
+            gridSize = parseInt(document.getElementById('gridSelect').value);
+            pairCount = parseInt(document.getElementById('pairSelect').value);
+            
+            canvasSize = Math.min(window.innerWidth - 20, 500);
+            canvas.width = canvasSize; canvas.height = canvasSize;
             spacing = (canvasSize - padding * 2) / (gridSize - 1);
             
-            finishedLines = [];
-            currentPath = [];
-            
+            finishedLines = []; currentPath = [];
             startLoadingAnim();
             document.getElementById('resetBtn').disabled = true;
 
             await generateLevel();
             
-            stopLoadingAnim();
+            clearInterval(loadingInterval);
             document.getElementById('resetBtn').disabled = false;
-            statusEl.innerText = "同じ色を繋いで、全マス埋めてね！";
+            statusEl.innerText = `${gridSize}x${gridSize} (${pairCount}ペア) - 全マス埋めて！`;
             draw();
         }
 
-        // --- 描画・操作ロジック (前回の安定版) ---
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
+            // 点の描画
             ctx.fillStyle = "#ddd";
             for(let i=0; i<gridSize; i++) {
                 for(let j=0; j<gridSize; j++) {
-                    ctx.beginPath(); ctx.arc(padding + i*spacing, padding + j*spacing, 4, 0, Math.PI*2); ctx.fill();
+                    ctx.beginPath(); ctx.arc(padding + i*spacing, padding + j*spacing, 3, 0, Math.PI*2); ctx.fill();
                 }
             }
             const drawPath = (pList, color, alpha=1) => {
-                ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = 14; ctx.lineCap = "round"; ctx.lineJoin = "round";
-                ctx.beginPath();
+                ctx.strokeStyle = color; ctx.globalAlpha = alpha; ctx.lineWidth = spacing * 0.4;
+                ctx.lineCap = "round"; ctx.lineJoin = "round"; ctx.beginPath();
                 pList.forEach((p, i) => {
                     const vx = padding + p.x * spacing; const vy = padding + p.y * spacing;
                     if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
@@ -144,14 +140,18 @@
             };
             finishedLines.forEach(l => drawPath(l.path, l.color));
             if (isDrawing) drawPath(currentPath, startNum.color, 0.5);
-            ctx.font = "bold 22px Arial"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+            
+            // 数字のサイズをグリッドに合わせて調整
+            let radius = spacing * 0.35;
+            ctx.font = `bold ${radius}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
             numbers.forEach(num => {
                 const x = padding + num.x * spacing; const y = padding + num.y * spacing;
-                ctx.fillStyle = num.color; ctx.beginPath(); ctx.arc(x, y, 22, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = num.color; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
                 ctx.fillStyle = "white"; ctx.fillText(num.val, x, y);
             });
         }
 
+        // --- 操作ロジック ---
         function getGridPos(e) {
             const rect = canvas.getBoundingClientRect();
             const clientX = e.clientX || (e.touches && e.touches[0].clientX);
@@ -162,18 +162,17 @@
             return null;
         }
 
-        function startAction(e) {
+        canvas.addEventListener('touchstart', (e) => {
             const p = getGridPos(e); if (!p) return;
             const num = numbers.find(n => n.x === p.x && n.y === p.y);
             if (num) {
                 finishedLines = finishedLines.filter(l => l.val !== num.val);
                 isDrawing = true; startNum = num; currentPath = [{x: p.x, y: p.y}];
             }
-        }
+        });
 
-        function moveAction(e) {
-            if (!isDrawing) return;
-            if (e.type === 'touchmove') e.preventDefault();
+        window.addEventListener('touchmove', (e) => {
+            if (!isDrawing) return; e.preventDefault();
             const p = getGridPos(e); if (!p) return;
             const last = currentPath[currentPath.length - 1];
             if ((Math.abs(p.x - last.x) + Math.abs(p.y - last.y)) === 1) {
@@ -186,9 +185,9 @@
                     }
                 }
             }
-        }
+        }, {passive: false});
 
-        function endAction() {
+        window.addEventListener('touchend', () => {
             if (!isDrawing) return;
             const last = currentPath[currentPath.length - 1];
             const endNum = numbers.find(n => n.x === last.x && n.y === last.y);
@@ -196,22 +195,14 @@
                 finishedLines.push({ path: [...currentPath], color: startNum.color, val: startNum.val });
                 checkClear();
             }
-            isDrawing = false; currentPath = []; draw();
-        }
+            isDrawing = false; draw();
+        });
 
         function checkClear() {
             const usedCount = new Set();
             finishedLines.forEach(l => l.path.forEach(p => usedCount.add(`${p.x},${p.y}`)));
-            if (usedCount.size === gridSize * gridSize) statusEl.innerText = "✨ クリア！！ ✨";
-            else if (finishedLines.length === 2) statusEl.innerText = "全部のマスを埋めてみて！";
+            if (usedCount.size === gridSize * gridSize) statusEl.innerText = "✨ PERFECT CLEAR! ✨";
         }
-
-        canvas.addEventListener('mousedown', startAction);
-        canvas.addEventListener('touchstart', startAction);
-        window.addEventListener('mousemove', moveAction);
-        canvas.addEventListener('touchmove', moveAction);
-        window.addEventListener('mouseup', endAction);
-        window.addEventListener('touchend', endAction);
 
         initGame();
     </script>
