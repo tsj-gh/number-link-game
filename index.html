@@ -3,74 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Line Connect Base</title>
+    <title>Number Connect - Grid</title>
     <style>
-        body { text-align: center; font-family: sans-serif; touch-action: none; background: #f0f0f0; }
-        canvas { background: white; border: 2px solid #333; display: block; margin: 20px auto; cursor: crosshair; touch-action: none; }
-        h1 { font-size: 1.2rem; color: #333; }
+        body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 20px; }
+        canvas { background: #fff; border: 1px solid #ddd; display: block; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); touch-action: none; }
+        .controls { margin-top: 20px; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 5px; border: 1px solid #ccc; background: white; }
     </style>
 </head>
 <body>
-    <h1>数字を繋ぐ土台：なぞってみよう</h1>
+    <h1>同じ数字を繋ごう</h1>
     <canvas id="gameCanvas"></canvas>
-    <button onclick="clearCanvas()">リセット</button>
+    <div class="controls">
+        <button onclick="initGame()">リセット</button>
+    </div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
         const ctx = canvas.getContext('2d');
         
-        // 画面サイズに合わせてキャンバスサイズを設定
-        const size = Math.min(window.innerWidth - 40, 400);
-        canvas.width = size;
-        canvas.height = size;
+        const gridSize = 4;
+        const padding = 50;
+        let spacing;
 
+        // 数字の配置データ（x, y, 数字）
+        const numbers = [
+            {x: 0, y: 0, val: 1}, {x: 3, y: 3, val: 1},
+            {x: 0, y: 3, val: 2}, {x: 2, y: 1, val: 2}
+        ];
+
+        function initGame() {
+            const size = Math.min(window.innerWidth - 40, 400);
+            canvas.width = size;
+            canvas.height = size;
+            spacing = (size - padding * 2) / (gridSize - 1);
+            drawStage();
+        }
+
+        function drawStage() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 1. グリッドの点を描画
+            for (let i = 0; i < gridSize; i++) {
+                for (let j = 0; j < gridSize; j++) {
+                    const x = padding + i * spacing;
+                    const y = padding + j * spacing;
+                    ctx.fillStyle = "#eee";
+                    ctx.beginPath();
+                    ctx.arc(x, y, 5, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            // 2. 数字を描画
+            ctx.font = "bold 24px Arial";
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            
+            numbers.forEach(num => {
+                const x = padding + num.x * spacing;
+                const y = padding + num.y * spacing;
+                
+                // 数字の背景円
+                ctx.fillStyle = num.val === 1 ? "#ff4757" : "#2e86de";
+                ctx.beginPath();
+                ctx.arc(x, y, 18, 0, Math.PI * 2);
+                ctx.fill();
+                
+                // 文字
+                ctx.fillStyle = "white";
+                ctx.fillText(num.val, x, y);
+            });
+        }
+
+        // お絵かき機能（前回と同じものを少し調整）
         let drawing = false;
-
-        // 線の設定
-        ctx.strokeStyle = '#3498db';
-        ctx.lineWidth = 5;
-        ctx.lineCap = 'round';
-
-        // 描画開始 (マウス & タップ)
-        function start(e) {
-            drawing = true;
-            draw(e);
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.clientX || (e.touches && e.touches[0].clientX);
+            const clientY = e.clientY || (e.touches && e.touches[0].clientY);
+            return {
+                x: clientX - rect.left,
+                y: clientY - rect.top
+            };
         }
 
-        // 描画終了
-        function end() {
-            drawing = false;
-            ctx.beginPath(); // 線のパスをリセット
-        }
+        canvas.addEventListener('mousedown', (e) => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+        canvas.addEventListener('touchstart', (e) => { drawing = true; const p = getPos(e); ctx.beginPath(); ctx.moveTo(p.x, p.y); });
+        window.addEventListener('mouseup', () => drawing = false);
+        window.addEventListener('touchend', () => drawing = false);
 
-        // 描画処理
-        function draw(e) {
+        canvas.addEventListener('mousemove', (e) => {
+            if (!drawing) return;
+            const p = getPos(e);
+            ctx.strokeStyle = "#333";
+            ctx.lineWidth = 3;
+            ctx.lineTo(p.x, p.y);
+            ctx.stroke();
+        });
+        canvas.addEventListener('touchmove', (e) => {
             if (!drawing) return;
             e.preventDefault();
-
-            // タップまたはマウスの座標を取得
-            const rect = canvas.getBoundingClientRect();
-            const x = (e.clientX || e.touches[0].clientX) - rect.left;
-            const y = (e.clientY || e.touches[0].clientY) - rect.top;
-
-            ctx.lineTo(x, y);
+            const p = getPos(e);
+            ctx.lineTo(p.x, p.y);
             ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(x, y);
-        }
+        });
 
-        // イベントリスナー（マウスとスマホ両方対応）
-        canvas.addEventListener('mousedown', start);
-        canvas.addEventListener('touchstart', start);
-        window.addEventListener('mouseup', end);
-        window.addEventListener('touchend', end);
-        canvas.addEventListener('mousemove', draw);
-        canvas.addEventListener('touchmove', draw);
-
-        // リセット機能
-        function clearCanvas() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-        }
+        initGame();
     </script>
 </body>
 </html>
