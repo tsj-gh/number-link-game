@@ -3,20 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Merge & Split</title>
+    <title>Number Connect - Visual Feedback</title>
     <style>
         body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 10px; }
-        .config { background: #eee; padding: 10px; margin-bottom: 10px; font-size: 14px; }
-        canvas { background: #fff; border: 1px solid #ddd; display: block; margin: 0 auto; box-shadow: 0 4px 10px rgba(0,0,0,0.1); touch-action: none; border-radius: 8px; }
-        .info { margin: 10px; font-weight: bold; color: #555; min-height: 24px; }
-        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 20px; border: none; background: #34495e; color: white; font-weight: bold; }
-        select { padding: 5px; margin: 0 5px; border-radius: 5px; }
+        .config { background: #eee; padding: 10px; margin-bottom: 10px; font-size: 14px; border-radius: 0 0 15px 15px; }
+        canvas { background: #fff; border: 1px solid #ddd; display: block; margin: 0 auto; box-shadow: 0 4px 15px rgba(0,0,0,0.1); touch-action: none; border-radius: 12px; }
+        .info { margin: 15px; font-weight: bold; color: #555; min-height: 24px; font-size: 1.1rem; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border-radius: 20px; border: none; background: #34495e; color: white; font-weight: bold; transition: 0.2s; }
+        button:active { transform: scale(0.95); opacity: 0.8; }
+        select { padding: 5px; margin: 0 5px; border-radius: 5px; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
     <div class="config">
         サイズ: <select id="gridSelect"><option value="4" selected>4x4</option><option value="5">5x5</option><option value="6">6x6</option><option value="8">8x8</option><option value="10">10x10</option></select>
-        ペア数: <select id="pairSelect"><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="9">9</option></select>
+        ペア: <select id="pairSelect"><option value="2" selected>2</option><option value="3">3</option><option value="4">4</option><option value="6">6</option><option value="9">9</option></select>
         <button id="resetBtn" onclick="initGame()">生成</button>
     </div>
     <div id="status" class="info">生成中...</div>
@@ -27,10 +28,10 @@
         const ctx = canvas.getContext('2d');
         const statusEl = document.getElementById('status');
         let gridSize, pairCount, spacing, canvasSize;
-        const padding = 40;
+        const padding = 50;
 
         let numbers = [];
-        let paths = {}; // { val: [ [{x,y}...], [{x,y}...] ] } ペアごとに最大2本の線を許可
+        let paths = {}; 
         let isDrawing = false;
         let activeVal = null, activePathIdx = null;
         let lastDownPos = null;
@@ -44,7 +45,7 @@
                     let startX = Math.floor(Math.random() * gridSize), startY = Math.floor(Math.random() * gridSize);
                     path = [{x: startX, y: startY}];
                     let visited = new Set([`${startX},${startY}`]);
-                    for (let i = 0; i < 500; i++) {
+                    for (let i = 0; i < 600; i++) {
                         let last = path[path.length - 1];
                         let neighbors = [{x:last.x+1, y:last.y},{x:last.x-1, y:last.y},{x:last.x, y:last.y+1},{x:last.x, y:last.y-1}]
                             .filter(n => n.x>=0 && n.x<gridSize && n.y>=0 && n.y<gridSize && !visited.has(`${n.x},${n.y}`));
@@ -59,7 +60,6 @@
                             let sIdx = m * step, eIdx = (m === pairCount - 1) ? path.length - 1 : (m + 1) * step - 1;
                             numbers.push({x: path[sIdx].x, y: path[sIdx].y, val: m+1, color: colors[m]});
                             numbers.push({x: path[eIdx].x, y: path[eIdx].y, val: m+1, color: colors[m]});
-                            // ペアごとに2つの「点（線のはじまり）」を用意
                             paths[m+1] = [ [{x: path[sIdx].x, y: path[sIdx].y}], [{x: path[eIdx].x, y: path[eIdx].y}] ];
                         }
                         resolve();
@@ -79,37 +79,61 @@
             spacing = (canvasSize - padding * 2) / (gridSize - 1);
             statusEl.innerText = "生成中...";
             await generateLevel();
-            statusEl.innerText = "両端から引けるよ！タップで消去";
+            statusEl.innerText = "端点をドラッグ！タップで1マス消去";
             draw();
         }
 
         function draw() {
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.fillStyle = "#ddd";
+            
+            // 背景グリッド
+            ctx.fillStyle = "#eee";
             for(let i=0; i<gridSize; i++) {
                 for(let j=0; j<gridSize; j++) {
                     ctx.beginPath(); ctx.arc(padding + i*spacing, padding + j*spacing, 2, 0, Math.PI*2); ctx.fill();
                 }
             }
+
+            // パスの描画
             Object.keys(paths).forEach(val => {
-                paths[val].forEach(path => {
+                paths[val].forEach((path, idx) => {
                     if (path.length < 1) return;
+                    const isBeingDragged = (isDrawing && activeVal == val && activePathIdx == idx);
+                    
                     ctx.strokeStyle = colors[val - 1];
-                    ctx.lineWidth = spacing * 0.45;
+                    ctx.lineWidth = spacing * (isBeingDragged ? 0.55 : 0.45);
                     ctx.lineCap = "round"; ctx.lineJoin = "round";
+                    ctx.globalAlpha = isBeingDragged ? 0.7 : 1.0;
+                    
                     ctx.beginPath();
                     path.forEach((p, i) => {
                         const vx = padding + p.x * spacing; const vy = padding + p.y * spacing;
                         if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
                     });
                     ctx.stroke();
+
+                    // 端点に光るエフェクトを表示
+                    if (path.length >= 1) {
+                        const last = path[path.length - 1];
+                        ctx.fillStyle = colors[val - 1];
+                        ctx.globalAlpha = 0.3;
+                        ctx.beginPath();
+                        ctx.arc(padding + last.x*spacing, padding + last.y*spacing, spacing*0.4, 0, Math.PI*2);
+                        ctx.fill();
+                    }
                 });
             });
+
+            ctx.globalAlpha = 1.0;
+            // 数字の描画
             let radius = spacing * 0.35;
             ctx.font = `bold ${radius}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
             numbers.forEach(num => {
                 const x = padding + num.x * spacing, y = padding + num.y * spacing;
-                ctx.fillStyle = num.color; ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+                ctx.fillStyle = num.color;
+                ctx.shadowBlur = 5; ctx.shadowColor = "rgba(0,0,0,0.2)";
+                ctx.beginPath(); ctx.arc(x, y, radius, 0, Math.PI * 2); ctx.fill();
+                ctx.shadowBlur = 0;
                 ctx.fillStyle = "white"; ctx.fillText(num.val, x, y);
             });
         }
@@ -118,17 +142,18 @@
             const rect = canvas.getBoundingClientRect();
             const rawX = (e.clientX - rect.left - padding) / spacing, rawY = (e.clientY - rect.top - padding) / spacing;
             const x = Math.round(rawX), y = Math.round(rawY);
-            if (Math.abs(rawX - x) < 0.4 && Math.abs(rawY - y) < 0.4 && x >= 0 && x < gridSize && y >= 0 && y < gridSize) return {x, y};
+            if (Math.abs(rawX - x) < 0.45 && Math.abs(rawY - y) < 0.45 && x >= 0 && x < gridSize && y >= 0 && y < gridSize) return {x, y};
             return null;
         }
 
         canvas.addEventListener('pointerdown', (e) => {
             const p = getGridPos(e); if (!p) return;
-            lastDownPos = p;
+            lastDownPos = { ...p };
             for (let val in paths) {
                 for (let i = 0; i < paths[val].length; i++) {
                     const path = paths[val][i];
                     const first = path[0], last = path[path.length - 1];
+                    // 端点を触った場合
                     if ((p.x === first.x && p.y === first.y) || (p.x === last.x && p.y === last.y)) {
                         if (p.x === first.x && p.y === first.y) path.reverse();
                         activeVal = val; activePathIdx = i; isDrawing = true;
@@ -145,23 +170,23 @@
             const currentPath = paths[activeVal][activePathIdx];
             const last = currentPath[currentPath.length - 1];
             if (p.x === last.x && p.y === last.y) return;
+
             if (Math.abs(p.x - last.x) + Math.abs(p.y - last.y) === 1) {
-                // 戻る処理
+                // 戻る
                 if (currentPath.length > 1 && p.x === currentPath[currentPath.length-2].x && p.y === currentPath[currentPath.length-2].y) {
                     currentPath.pop(); draw(); return;
                 }
-                // 合流判定
+                // 合流
                 const otherPathIdx = 1 - activePathIdx;
                 const otherPath = paths[activeVal][otherPathIdx];
                 if (otherPath && otherPath.some(pt => pt.x === p.x && pt.y === p.y)) {
-                    // 合流！otherPathを逆順にしてcurrentPathにくっつける
                     let targetIdx = otherPath.findIndex(pt => pt.x === p.x && pt.y === p.y);
                     let partToJoin = otherPath.slice(0, targetIdx + 1).reverse();
                     paths[activeVal][activePathIdx] = currentPath.concat(partToJoin);
-                    paths[activeVal].splice(otherPathIdx, 1); // 1本になった
+                    paths[activeVal].splice(otherPathIdx, 1);
                     isDrawing = false; draw(); return;
                 }
-                // 他の線との衝突判定
+                // 衝突
                 const isOccupied = Object.values(paths).flat().some(path => path.some(pt => pt.x === p.x && pt.y === p.y));
                 if (!isOccupied) {
                     currentPath.push(p); draw();
@@ -171,25 +196,12 @@
 
         window.addEventListener('pointerup', (e) => {
             const p = getGridPos(e);
-            if (!isDrawing && p && lastDownPos && p.x === lastDownPos.x && p.y === lastDownPos.y) {
-                // シングルタップで分断
-                for (let val in paths) {
-                    for (let i = 0; i < paths[val].length; i++) {
-                        const path = paths[val][i];
-                        const idx = path.findIndex(pt => pt.x === p.x && pt.y === p.y);
-                        if (idx !== -1) {
-                            // 数字の上なら線を空にする
-                            if (numbers.some(n => n.x === p.x && n.y === p.y)) {
-                                paths[val][i] = [{x: p.x, y: p.y}];
-                            } else {
-                                // 途中のマスならそこで切断して2本に分ける
-                                const path1 = path.slice(0, idx);
-                                const path2 = path.slice(idx + 1);
-                                paths[val] = [path1, path2];
-                            }
-                            draw(); break;
-                        }
-                    }
+            // タップ判定 (移動せずに離した場合)
+            if (isDrawing && p && lastDownPos && p.x === lastDownPos.x && p.y === lastDownPos.y) {
+                const path = paths[activeVal][activePathIdx];
+                // 数字の上でなければ、最後の一歩を消す（1マス分断）
+                if (!numbers.some(n => n.x === p.x && n.y === p.y)) {
+                    path.pop();
                 }
             }
             isDrawing = false; activeVal = null; activePathIdx = null; checkClear(); draw();
@@ -201,9 +213,11 @@
             for (let val in paths) {
                 const pSet = paths[val];
                 pSet.forEach(path => path.forEach(p => usedCount.add(`${p.x},${p.y}`)));
-                if (pSet.length !== 1) allConnected = false; // 1本に統合されていない
+                if (pSet.length !== 1) allConnected = false;
             }
-            if (usedCount.size === gridSize * gridSize && allConnected) statusEl.innerText = "✨ PERFECT CLEAR! ✨";
+            if (usedCount.size === gridSize * gridSize && allConnected) {
+                statusEl.innerText = "✨ PERFECT CLEAR! ✨";
+            }
         }
         initGame();
     </script>
