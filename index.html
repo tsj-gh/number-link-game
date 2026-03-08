@@ -3,25 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Fixed Edition</title>
+    <title>Number Connect - Solution Edition</title>
     <style>
         :root { --main-bg: #f8f9fa; --panel-bg: #ffffff; --accent: #34495e; }
         body { font-family: sans-serif; background: var(--main-bg); margin: 0; display: flex; flex-direction: column; align-items: center; touch-action: none; }
         .config { width: 100%; background: var(--accent); color: white; padding: 15px 0; text-align: center; }
-        .config select, .config button { padding: 8px 12px; border-radius: 8px; border: none; font-size: 14px; margin: 0 5px; }
+        .config select, .config button { padding: 8px 12px; border-radius: 8px; border: none; font-size: 14px; margin: 0 5px; vertical-align: middle; }
         .config button { background: #2ecc71; color: white; font-weight: bold; cursor: pointer; }
-        .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px; }
+        #giveupBtn { background: #e74c3c; }
+        
+        .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px; max-width: 900px; }
+        .game-area { display: flex; flex-direction: column; align-items: center; }
+        .side-panel { width: 240px; background: var(--panel-bg); padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: left; font-size: 0.85rem; color: #555; }
+        
         canvas { background: #fff; border: 2px solid #eee; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-radius: 12px; }
         .info-bar { margin: 10px 0; display: flex; justify-content: space-between; width: 100%; font-weight: bold; max-width: 500px; }
-        #resultOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; justify-content: center; align-items: center; flex-direction: column; color: white; }
+        
+        .overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; justify-content: center; align-items: center; flex-direction: column; color: white; }
+        .result-card { background: white; color: #333; padding: 40px; border-radius: 20px; text-align: center; min-width: 250px; }
     </style>
 </head>
 <body>
 
 <div class="config">
     難易度: <select id="diffSelect">
-        <option value="easy">初級 (直線的)</option>
-        <option value="normal" selected>中級 (迂回必須)</option>
+        <option value="easy">初級</option>
+        <option value="normal" selected>中級</option>
     </select>
     サイズ: <select id="gridSelect" onchange="updatePairOptions()">
         <option value="4">4x4</option><option value="6" selected>6x6</option>
@@ -29,6 +36,7 @@
     </select>
     ペア: <select id="pairSelect"></select>
     <button onclick="initGame()">生成</button>
+    <button id="giveupBtn" onclick="giveUp()">ギブアップ</button>
 </div>
 
 <div class="container">
@@ -36,13 +44,25 @@
         <div class="info-bar"><span id="status">準備中</span><span id="timer">00:00</span></div>
         <canvas id="gameCanvas"></canvas>
     </div>
+    
+    <div class="side-panel">
+        <h3>💡 ルール</h3>
+        <ul>
+            <li>同じ数字を線で繋ぎます。</li>
+            <li><b>両方の数字</b>から線を伸ばせます。</li>
+            <li>線が触れると合体します。</li>
+            <li><b>全てのマス</b>を埋めるとクリア！</li>
+            <li>行き詰まったら「ギブアップ」で正解を確認できます。</li>
+        </ul>
+    </div>
 </div>
 
-<div id="resultOverlay">
-    <div style="background:white; color:#333; padding:40px; border-radius:20px; text-align:center;">
-        <h1 style="color:#2ecc71">Perfect Clear!</h1>
+<div id="resultOverlay" class="overlay">
+    <div class="result-card">
+        <h1 id="resultTitle" style="color:#2ecc71">Perfect Clear!</h1>
+        <p id="resultMsg">タイム</p>
         <h2 id="finalTime">00:00</h2>
-        <button onclick="closeResult()" style="background:#34495e; color:white; padding:10px 30px; border-radius:20px; border:none; cursor:pointer;">閉じる</button>
+        <button onclick="closeResult()" style="background:#34495e; color:white; padding:10px 30px; border-radius:20px; border:none; cursor:pointer;">次へ</button>
     </div>
 </div>
 
@@ -58,17 +78,19 @@
     const padding = 50;
     let numbers = [], paths = {}, isDrawing = false, activeVal = null, activePathIdx = null;
     let startTime, timerInterval, lastDownPos = null;
+    let answerSnake = []; // 正解保存用
+    let showingAnswer = false;
 
     const colors = ["#ff4757", "#2e86de", "#2ed573", "#ffa502", "#a29bfe", "#e17055", "#00cec9", "#6c5ce7", "#fdcb6e"];
 
     function updatePairOptions() {
         const size = parseInt(document.getElementById('gridSelect').value);
-        const maxPairs = Math.min(9, Math.floor((size * size) / 4)); // 中級の複雑さ維持のため少し余裕を持たせる
+        const maxPairs = Math.min(9, Math.floor((size * size) / 3.5));
         pairSelect.innerHTML = "";
         for (let i = 2; i <= maxPairs; i++) {
             const opt = document.createElement('option');
             opt.value = i; opt.innerText = i;
-            if (i === (size === 4 ? 2 : 4)) opt.selected = true;
+            if (i === (size === 4 ? 2 : (size === 6 ? 4 : 5))) opt.selected = true;
             pairSelect.appendChild(opt);
         }
     }
@@ -93,21 +115,16 @@
 
                 if (visited.size === gridSize * gridSize) {
                     numbers = []; paths = {};
-                    let segments = [];
-                    // 1本のハミルトン路(snake)をペア数分に「連続して」切り分ける
+                    answerSnake = [...snake];
                     let len = snake.length;
                     let step = Math.floor(len / pairCount);
                     
                     for(let m=0; m<pairCount; m++) {
                         let startIdx = m * step;
                         let endIdx = (m === pairCount - 1) ? len - 1 : (m + 1) * step - 1;
-                        
-                        // 中級：ペア内の順序をルート上で離す(端と端にする)
-                        // これにより、解は「ルート通り」のみになる
                         let p1 = snake[startIdx], p2 = snake[endIdx];
                         numbers.push({x:p1.x, y:p1.y, val:m+1, color:colors[m]});
                         numbers.push({x:p2.x, y:p2.y, val:m+1, color:colors[m]});
-                        // 初期状態：数字のみのパスを2つ用意
                         paths[m+1] = [[{x:p1.x, y:p1.y}], [{x:p2.x, y:p2.y}]];
                     }
                     resolve();
@@ -126,38 +143,65 @@
         canvas.width = canvas.height = canvasSize;
         spacing = (canvasSize - padding * 2) / (gridSize - 1);
         statusEl.innerText = "生成中...";
+        showingAnswer = false;
         clearInterval(timerInterval);
         await generateLevel();
         statusEl.innerText = "スタート！";
         startTime = Date.now();
-        timerInterval = setInterval(() => {
-            let diff = Math.floor((Date.now()-startTime)/1000);
-            timerEl.innerText = `${String(Math.floor(diff/60)).padStart(2,'0')}:${String(diff%60).padStart(2,'0')}`;
-        }, 1000);
+        timerInterval = setInterval(updateTimer, 1000);
         draw();
+    }
+
+    function updateTimer() {
+        let diff = Math.floor((Date.now()-startTime)/1000);
+        timerEl.innerText = `${String(Math.floor(diff/60)).padStart(2,'0')}:${String(diff%60).padStart(2,'0')}`;
     }
 
     function draw() {
         ctx.clearRect(0,0,canvas.width,canvas.height);
+        
+        // 背景ドット
         ctx.fillStyle = "#eee";
         for(let i=0;i<gridSize;i++) for(let j=0;j<gridSize;j++) {
             ctx.beginPath(); ctx.arc(padding+i*spacing, padding+j*spacing, 2, 0, 7); ctx.fill();
         }
+
+        // ギブアップ時の正解表示（薄く背景に表示）
+        if (showingAnswer) {
+            ctx.setLineDash([5, 5]);
+            ctx.strokeStyle = "#ccc";
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            answerSnake.forEach((p, i) => {
+                let x = padding + p.x * spacing, y = padding + p.y * spacing;
+                if(i==0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+
+        // パスの描画
         Object.keys(paths).forEach(v => {
             paths[v].forEach((path, idx) => {
                 let isD = (isDrawing && activeVal == v && activePathIdx == idx);
                 ctx.strokeStyle = colors[v-1]; ctx.lineWidth = spacing*(isD?0.55:0.45);
                 ctx.lineCap = ctx.lineJoin = "round"; ctx.globalAlpha = isD?0.7:1;
                 ctx.beginPath();
-                path.forEach((p,i) => { let x=padding+p.x*spacing, y=padding+p.y*spacing; if(i==0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
+                path.forEach((p,i) => {
+                    let x=padding+p.x*spacing, y=padding+p.y*spacing;
+                    if(i==0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+                });
                 ctx.stroke();
-                // 操作可能端点のハイライト
+                
+                // 端点のハイライト
                 let last = path[path.length-1];
-                ctx.fillStyle = colors[v-1]; ctx.globalAlpha = 0.2;
+                ctx.fillStyle = colors[v-1]; ctx.globalAlpha = 0.25;
                 ctx.beginPath(); ctx.arc(padding+last.x*spacing, padding+last.y*spacing, spacing*0.4, 0, 7); ctx.fill();
                 ctx.globalAlpha = 1;
             });
         });
+
+        // 数字
         let r = spacing*0.35; ctx.font = `bold ${r}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
         numbers.forEach(n => {
             let x=padding+n.x*spacing, y=padding+n.y*spacing;
@@ -174,20 +218,22 @@
     }
 
     canvas.addEventListener('pointerdown', (e) => {
+        if(showingAnswer) return;
         const p = getGridPos(e); if(!p) return;
         lastDownPos = {...p};
         
         for(let v in paths) {
             for(let i=0; i<paths[v].length; i++) {
                 let path = paths[v][i];
-                // 端点を触ったか
+                // 先端（現在伸びている方）を触った場合
                 if(p.x == path[path.length-1].x && p.y == path[path.length-1].y) {
                     activeVal = v; activePathIdx = i; isDrawing = true;
                     canvas.setPointerCapture(e.pointerId); draw(); return;
                 }
-                // 逆側（開始点）を触った場合、自動的にそちらを先端にする
-                if(p.x == path[0].x && p.y == path[0].y && path.length > 1) {
-                    path.reverse(); activeVal = v; activePathIdx = i; isDrawing = true;
+                // 開始点（数字側）を触った場合、そちらを操作端に切り替える
+                if(p.x == path[0].x && p.y == path[0].y) {
+                    path.reverse(); 
+                    activeVal = v; activePathIdx = i; isDrawing = true;
                     canvas.setPointerCapture(e.pointerId); draw(); return;
                 }
             }
@@ -201,29 +247,25 @@
         if(p.x==last.x && p.y==last.y) return;
 
         if(Math.abs(p.x-last.x) + Math.abs(p.y-last.y) == 1) {
-            if(path.length>1 && p.x==path[path.length-2].x && p.y==path[path.length-2].y) { path.pop(); draw(); return; }
-
-            // 合流判定
+            // 戻る
+            if(path.length>1 && p.x==path[path.length-2].x && p.y==path[path.length-2].y) {
+                path.pop(); draw(); return;
+            }
+            // 合流（同じ色の別の端点に触れた）
             let otherIdx = 1 - activePathIdx;
             let otherPath = paths[activeVal][otherIdx];
-            if(otherPath && otherPath[otherPath.length-1].x === p.x && otherPath[otherPath.length-1].y === p.y) {
+            if(otherPath && (p.x == otherPath[otherPath.length-1].x && p.y == otherPath[otherPath.length-1].y)) {
                 paths[activeVal][activePathIdx] = path.concat(otherPath.reverse());
                 paths[activeVal].splice(otherIdx, 1);
                 isDrawing = false; draw(); return;
             }
-
-            // 通過禁止バリデーション
-            const isOcc = Object.values(paths).flat().some(pa => pa.some(pt => pt.x==p.x && pt.y==p.y));
-            if(isOcc) return;
-
-            // 数字マス判定
+            // 通過禁止
+            if(Object.values(paths).flat().some(pa => pa.some(pt => pt.x==p.x && pt.y==p.y))) return;
             const targetNum = numbers.find(n => n.x === p.x && n.y === p.y);
             if(targetNum) {
-                if(targetNum.val != activeVal) return; // 他人の数字
-                // 自分のペアの数字に「新規」で到達する場合
+                if(targetNum.val != activeVal) return;
                 path.push(p); isDrawing = false; draw(); return;
             }
-
             path.push(p); draw();
         }
     });
@@ -231,32 +273,55 @@
     window.addEventListener('pointerup', (e) => {
         const p = getGridPos(e);
         if(isDrawing && p && lastDownPos && p.x==lastDownPos.x && p.y==lastDownPos.y) {
-            // 数字の上でなければ先端を1マス消す
             if(!numbers.some(n => n.x==p.x && n.y==p.y)) paths[activeVal][activePathIdx].pop();
         }
         isDrawing = false; activeVal = null; checkClear(); draw();
     });
 
     function checkClear() {
-        let used = new Set();
-        let allColorsConnected = true;
+        let used = new Set(); let ok = true;
         for(let v in paths) {
-            if(paths[v].length !== 1) { allColorsConnected = false; continue; }
-            let path = paths[v][0];
-            // 両端が同じ数字か
-            let start = path[0], end = path[path.length-1];
-            let n1 = numbers.find(n => n.x==start.x && n.y==start.y && n.val == v);
-            let n2 = numbers.find(n => n.x==end.x && n.y==end.y && n.val == v);
-            if(!n1 || !n2) allColorsConnected = false;
-            path.forEach(pt => used.add(`${pt.x},${pt.y}`));
+            if(paths[v].length !== 1) { ok = false; continue; }
+            let p = paths[v][0];
+            if(!numbers.some(n => n.x==p[0].x && n.y==p[0].y && n.val==v) || 
+               !numbers.some(n => n.x==p[p.length-1].x && n.y==p[p.length-1].y && n.val==v)) ok = false;
+            p.forEach(pt => used.add(`${pt.x},${pt.y}`));
         }
-        if(used.size === gridSize * gridSize && allColorsConnected) {
-            clearInterval(timerInterval);
-            document.getElementById('finalTime').innerText = timerEl.innerText;
-            document.getElementById('resultOverlay').style.display = 'flex';
+        if(used.size === gridSize*gridSize && ok) {
+            showResult(true);
         }
     }
-    function closeResult() { document.getElementById('resultOverlay').style.display='none'; initGame(); }
+
+    function giveUp() {
+        if(isDrawing) return;
+        showingAnswer = true;
+        clearInterval(timerInterval);
+        draw();
+        setTimeout(() => showResult(false), 1000);
+    }
+
+    function showResult(success) {
+        clearInterval(timerInterval);
+        const overlay = document.getElementById('resultOverlay');
+        const title = document.getElementById('resultTitle');
+        const msg = document.getElementById('resultMsg');
+        if(success) {
+            title.innerText = "Perfect Clear!"; title.style.color = "#2ecc71";
+            msg.innerText = "クリアタイム";
+            document.getElementById('finalTime').innerText = timerEl.innerText;
+        } else {
+            title.innerText = "Give Up"; title.style.color = "#e74c3c";
+            msg.innerText = "残念！正解はこちらです";
+            document.getElementById('finalTime').innerText = "--:--";
+        }
+        overlay.style.display = 'flex';
+    }
+
+    function closeResult() {
+        document.getElementById('resultOverlay').style.display='none';
+        initGame();
+    }
+
     updatePairOptions(); initGame();
 </script>
 </body>
