@@ -2,23 +2,37 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>4x4 Grid</title>
+    <title>4x4 Random Grid</title>
     <style>
-        .grid { display: grid; grid-template-columns: repeat(4, 50px); gap: 5px; }
-        .cell { width: 50px; height: 50px; border: 1px solid #ccc; cursor: pointer; }
-        .active { background-color: #ff4757; }
+        /* 見た目を整える場所 (CSS) */
+        .grid { display: grid; grid-template-columns: repeat(4, 60px); gap: 10px; margin-top: 20px; }
+        .cell { width: 60px; height: 60px; border: 2px solid #333; cursor: pointer; border-radius: 8px; transition: 0.2s; }
     </style>
 </head>
 <body>
+    <h1>Color Grid</h1>
     <div class="grid" id="grid"></div>
+
     <script>
         const grid = document.getElementById('grid');
+
         for (let i = 0; i < 16; i++) {
             const cell = document.createElement('div');
             cell.classList.add('cell');
-            cell.onclick = () => cell.classList.toggle('active');
+
+            // クリックした時の動き
+            cell.onclick = () => {
+                // すでに色がついている場合は白に戻し、そうでなければランダムな色にする
+                if (cell.style.backgroundColor) {
+                    cell.style.backgroundColor = '';
+                } else {
+                    const randomHue = Math.floor(Math.random() * 360);
+                    cell.style.backgroundColor = `hsl(${randomHue}, 70%, 60%)`;
+                }
+            };
+
             grid.appendChild(cell);
         }
     </script>
-</body>
+    </body>
 </html>
