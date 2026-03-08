@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Pro Feel</title>
+    <title>Number Connect - Pro Feel Fixed</title>
     <style>
         body { text-align: center; font-family: sans-serif; touch-action: none; background: #fdfdfd; margin: 0; padding-top: 10px; }
         .config { background: #eee; padding: 10px; margin-bottom: 10px; font-size: 14px; }
@@ -32,14 +32,13 @@
         let spacing, canvasSize;
 
         let numbers = [];
-        let paths = {}; // { val: [{x,y}, ...] } 形式で各数字のパスを保持
+        let paths = {}; 
         let isDrawing = false;
-        let activeVal = null; // 現在引いている数字のID
+        let activeVal = null; 
         let loadingInterval;
 
         const colors = ["#ff4757", "#2e86de", "#2ed573", "#ffa502", "#a29bfe", "#e17055", "#00cec9", "#6c5ce7", "#fdcb6e"];
 
-        // --- 生成・初期化（アルゴリズムは前回同様） ---
         async function generateLevel() {
             return new Promise((resolve) => {
                 const attempt = () => {
@@ -65,7 +64,7 @@
                             let n1 = {x: path[sIdx].x, y: path[sIdx].y, val: m+1, color: colors[m]};
                             let n2 = {x: path[eIdx].x, y: path[eIdx].y, val: m+1, color: colors[m]};
                             numbers.push(n1, n2);
-                            paths[m+1] = [{x: n1.x, y: n1.y}]; // 初期状態は開始点のみ
+                            paths[m+1] = [{x: n1.x, y: n1.y}]; 
                         }
                         resolve();
                     } else { setTimeout(attempt, 0); }
@@ -84,7 +83,7 @@
             spacing = (canvasSize - padding * 2) / (gridSize - 1);
             statusEl.innerText = "生成中...";
             await generateLevel();
-            statusEl.innerText = "途中まで引けるよ！";
+            statusEl.innerText = "端点をドラッグして繋ごう！";
             draw();
         }
 
@@ -96,14 +95,12 @@
                     ctx.beginPath(); ctx.arc(padding + i*spacing, padding + j*spacing, 2, 0, Math.PI*2); ctx.fill();
                 }
             }
-            // 全てのパスを描画
             Object.keys(paths).forEach(val => {
                 const path = paths[val];
                 if (path.length < 1) return;
                 ctx.strokeStyle = colors[val - 1];
                 ctx.lineWidth = spacing * 0.45;
                 ctx.lineCap = "round"; ctx.lineJoin = "round";
-                ctx.globalAlpha = (isDrawing && activeVal == val) ? 0.6 : 1.0;
                 ctx.beginPath();
                 path.forEach((p, i) => {
                     const vx = padding + p.x * spacing; const vy = padding + p.y * spacing;
@@ -111,8 +108,6 @@
                 });
                 ctx.stroke();
             });
-            ctx.globalAlpha = 1.0;
-            // 数字の描画
             let radius = spacing * 0.35;
             ctx.font = `bold ${radius}px Arial`; ctx.textAlign = "center"; ctx.textBaseline = "middle";
             numbers.forEach(num => {
@@ -124,26 +119,26 @@
 
         function getGridPos(e) {
             const rect = canvas.getBoundingClientRect();
-            const x = Math.round((e.clientX - rect.left - padding) / spacing);
-            const y = Math.round((e.clientY - rect.top - padding) / spacing);
-            if (x >= 0 && x < gridSize && y >= 0 && y < gridSize) return {x, y};
+            const rawX = (e.clientX - rect.left - padding) / spacing;
+            const rawY = (e.clientY - rect.top - padding) / spacing;
+            const x = Math.round(rawX);
+            const y = Math.round(rawY);
+            // 感度調整: マスの中心から0.4マス以上離れていたら無視
+            if (Math.abs(rawX - x) < 0.4 && Math.abs(rawY - y) < 0.4 &&
+                x >= 0 && x < gridSize && y >= 0 && y < gridSize) return {x, y};
             return null;
         }
 
-        // --- 操作ロジック ---
         canvas.addEventListener('pointerdown', (e) => {
             const p = getGridPos(e); if (!p) return;
-            // どのパスの端点（開始点または終了点）を触ったか判定
             for (let val in paths) {
                 const path = paths[val];
                 const first = path[0];
                 const last = path[path.length - 1];
-                
                 if ((p.x === first.x && p.y === first.y) || (p.x === last.x && p.y === last.y)) {
                     activeVal = val;
                     isDrawing = true;
                     canvas.setPointerCapture(e.pointerId);
-                    // もし開始点（数字1つ目）を触ったなら、パスを逆転させて「常に末尾から伸ばす」ようにする
                     if (p.x === first.x && p.y === first.y && path.length > 1) {
                         path.reverse();
                     }
@@ -153,42 +148,28 @@
             }
         });
 
-        canvas.addEventListener('pointermove', (e) => {
+        window.addEventListener('pointermove', (e) => {
             if (!isDrawing) return;
             const p = getGridPos(e); if (!p) return;
             const path = paths[activeVal];
             const last = path[path.length - 1];
-            
-            // ルール1: 隣のマスか？
+            if (p.x === last.x && p.y === last.y) return;
             if (Math.abs(p.x - last.x) + Math.abs(p.y - last.y) === 1) {
-                // ルール: 自分のパスを「戻る」場合は消す
                 if (path.length > 1 && p.x === path[path.length-2].x && p.y === path[path.length-2].y) {
-                    path.pop();
-                    draw();
-                    return;
+                    path.pop(); draw(); return;
                 }
-                
-                // 他の線や数字との衝突判定
-                const isOccupied = Object.values(paths).some(otherPath => 
-                    otherPath.some(pt => pt.x === p.x && pt.y === p.y)
-                );
-                
-                // ただし、自分のペアの「もう片方の数字」に到達するのはOK
+                const isOccupied = Object.values(paths).some(op => op.some(pt => pt.x === p.x && pt.y === p.y));
                 const targetNum = numbers.find(n => n.x === p.x && n.y === p.y && n.val == activeVal);
                 const otherNum = numbers.find(n => n.x === p.x && n.y === p.y && n.val != activeVal);
-
                 if (!isOccupied && !otherNum) {
-                    path.push(p);
-                    draw();
-                } else if (targetNum && p.x !== path[0].x || p.y !== path[0].y) {
-                    // ペアのもう片方に着いた
-                    path.push(p);
-                    draw();
+                    path.push(p); draw();
+                } else if (targetNum && (p.x !== path[0].x || p.y !== path[0].y)) {
+                    path.push(p); draw();
                 }
             }
         });
 
-        canvas.addEventListener('pointerup', () => {
+        window.addEventListener('pointerup', () => {
             isDrawing = false;
             activeVal = null;
             checkClear();
@@ -201,20 +182,19 @@
             for (let val in paths) {
                 const path = paths[val];
                 path.forEach(p => usedCount.add(`${p.x},${p.y}`));
-                // 各ペアが繋がっているか（端点と端点が数字の位置か）
                 const first = path[0];
                 const last = path[path.length - 1];
                 const pair = numbers.filter(n => n.val == val);
-                const connected = pair.every(n => 
-                    (n.x === first.x && n.y === first.y) || (n.x === last.x && n.y === last.y)
+                const connected = (
+                    (pair[0].x === first.x && pair[0].y === first.y && pair[1].x === last.x && pair[1].y === last.y) ||
+                    (pair[1].x === first.x && pair[1].y === first.y && pair[0].x === last.x && pair[0].y === last.y)
                 );
-                if (!connected || path.length < 2) allConnected = false;
+                if (!connected) allConnected = false;
             }
             if (usedCount.size === gridSize * gridSize && allConnected) {
                 statusEl.innerText = "✨ PERFECT CLEAR! ✨";
             }
         }
-
         initGame();
     </script>
 </body>
