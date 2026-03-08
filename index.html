@@ -2,37 +2,75 @@
 <html lang="ja">
 <head>
     <meta charset="UTF-8">
-    <title>4x4 Random Grid</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Line Connect Base</title>
     <style>
-        /* 見た目を整える場所 (CSS) */
-        .grid { display: grid; grid-template-columns: repeat(4, 60px); gap: 10px; margin-top: 20px; }
-        .cell { width: 60px; height: 60px; border: 2px solid #333; cursor: pointer; border-radius: 8px; transition: 0.2s; }
+        body { text-align: center; font-family: sans-serif; touch-action: none; background: #f0f0f0; }
+        canvas { background: white; border: 2px solid #333; display: block; margin: 20px auto; cursor: crosshair; touch-action: none; }
+        h1 { font-size: 1.2rem; color: #333; }
     </style>
 </head>
 <body>
-    <h1>Color Grid</h1>
-    <div class="grid" id="grid"></div>
+    <h1>数字を繋ぐ土台：なぞってみよう</h1>
+    <canvas id="gameCanvas"></canvas>
+    <button onclick="clearCanvas()">リセット</button>
 
     <script>
-        const grid = document.getElementById('grid');
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        
+        // 画面サイズに合わせてキャンバスサイズを設定
+        const size = Math.min(window.innerWidth - 40, 400);
+        canvas.width = size;
+        canvas.height = size;
 
-        for (let i = 0; i < 16; i++) {
-            const cell = document.createElement('div');
-            cell.classList.add('cell');
+        let drawing = false;
 
-            // クリックした時の動き
-            cell.onclick = () => {
-                // すでに色がついている場合は白に戻し、そうでなければランダムな色にする
-                if (cell.style.backgroundColor) {
-                    cell.style.backgroundColor = '';
-                } else {
-                    const randomHue = Math.floor(Math.random() * 360);
-                    cell.style.backgroundColor = `hsl(${randomHue}, 70%, 60%)`;
-                }
-            };
+        // 線の設定
+        ctx.strokeStyle = '#3498db';
+        ctx.lineWidth = 5;
+        ctx.lineCap = 'round';
 
-            grid.appendChild(cell);
+        // 描画開始 (マウス & タップ)
+        function start(e) {
+            drawing = true;
+            draw(e);
+        }
+
+        // 描画終了
+        function end() {
+            drawing = false;
+            ctx.beginPath(); // 線のパスをリセット
+        }
+
+        // 描画処理
+        function draw(e) {
+            if (!drawing) return;
+            e.preventDefault();
+
+            // タップまたはマウスの座標を取得
+            const rect = canvas.getBoundingClientRect();
+            const x = (e.clientX || e.touches[0].clientX) - rect.left;
+            const y = (e.clientY || e.touches[0].clientY) - rect.top;
+
+            ctx.lineTo(x, y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(x, y);
+        }
+
+        // イベントリスナー（マウスとスマホ両方対応）
+        canvas.addEventListener('mousedown', start);
+        canvas.addEventListener('touchstart', start);
+        window.addEventListener('mouseup', end);
+        window.addEventListener('touchend', end);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('touchmove', draw);
+
+        // リセット機能
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
         }
     </script>
-    </body>
+</body>
 </html>
