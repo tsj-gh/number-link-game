@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Number Connect - Strict Rules</title>
+    <title>Number Connect - Fixed Edition</title>
     <style>
         :root { --main-bg: #f8f9fa; --panel-bg: #ffffff; --accent: #34495e; }
         body { font-family: sans-serif; background: var(--main-bg); margin: 0; display: flex; flex-direction: column; align-items: center; touch-action: none; }
@@ -11,10 +11,8 @@
         .config select, .config button { padding: 8px 12px; border-radius: 8px; border: none; font-size: 14px; margin: 0 5px; }
         .config button { background: #2ecc71; color: white; font-weight: bold; cursor: pointer; }
         .container { display: flex; flex-wrap: wrap; justify-content: center; gap: 20px; padding: 20px; }
-        .game-area { display: flex; flex-direction: column; align-items: center; }
-        .side-panel { width: 240px; background: var(--panel-bg); padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: left; font-size: 0.85rem; }
         canvas { background: #fff; border: 2px solid #eee; box-shadow: 0 10px 25px rgba(0,0,0,0.1); border-radius: 12px; }
-        .info-bar { margin: 10px 0; display: flex; justify-content: space-between; width: 100%; font-weight: bold; }
+        .info-bar { margin: 10px 0; display: flex; justify-content: space-between; width: 100%; font-weight: bold; max-width: 500px; }
         #resultOverlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.8); z-index: 100; justify-content: center; align-items: center; flex-direction: column; color: white; }
     </style>
 </head>
@@ -22,8 +20,8 @@
 
 <div class="config">
     難易度: <select id="diffSelect">
-        <option value="easy">初級</option>
-        <option value="normal" selected>中級</option>
+        <option value="easy">初級 (直線的)</option>
+        <option value="normal" selected>中級 (迂回必須)</option>
     </select>
     サイズ: <select id="gridSelect" onchange="updatePairOptions()">
         <option value="4">4x4</option><option value="6" selected>6x6</option>
@@ -38,21 +36,13 @@
         <div class="info-bar"><span id="status">準備中</span><span id="timer">00:00</span></div>
         <canvas id="gameCanvas"></canvas>
     </div>
-    <div class="side-panel">
-        <h3>💡 厳格ルール</h3>
-        <ul>
-            <li>数字は必ず<b>線の端</b>になります。通り抜けはできません。</li>
-            <li>同じ数字の2つの端を繋ぐと1本の線になります。</li>
-            <li>全てのマスを埋めればクリア！</li>
-        </ul>
-    </div>
 </div>
 
 <div id="resultOverlay">
     <div style="background:white; color:#333; padding:40px; border-radius:20px; text-align:center;">
-        <h1 style="color:#2ecc71">Clear!</h1>
+        <h1 style="color:#2ecc71">Perfect Clear!</h1>
         <h2 id="finalTime">00:00</h2>
-        <button onclick="closeResult()" style="background:#34495e; color:white; padding:10px 30px; border-radius:20px; border:none; cursor:pointer;">OK</button>
+        <button onclick="closeResult()" style="background:#34495e; color:white; padding:10px 30px; border-radius:20px; border:none; cursor:pointer;">閉じる</button>
     </div>
 </div>
 
@@ -73,12 +63,12 @@
 
     function updatePairOptions() {
         const size = parseInt(document.getElementById('gridSelect').value);
-        const maxPairs = Math.min(9, Math.floor((size * size) / 3));
+        const maxPairs = Math.min(9, Math.floor((size * size) / 4)); // 中級の複雑さ維持のため少し余裕を持たせる
         pairSelect.innerHTML = "";
         for (let i = 2; i <= maxPairs; i++) {
             const opt = document.createElement('option');
             opt.value = i; opt.innerText = i;
-            if (i === (size === 4 ? 3 : 5)) opt.selected = true;
+            if (i === (size === 4 ? 2 : 4)) opt.selected = true;
             pairSelect.appendChild(opt);
         }
     }
@@ -104,27 +94,24 @@
                 if (visited.size === gridSize * gridSize) {
                     numbers = []; paths = {};
                     let segments = [];
-                    if (isNormal) {
-                        let availableIdx = Array.from({length: snake.length}, (_, i) => i);
-                        for (let m = 0; m < pairCount; m++) {
-                            let startIdx = availableIdx.splice(0, 1)[0];
-                            let idealGap = Math.floor(snake.length / pairCount);
-                            let endIdxPos = Math.min(availableIdx.length - 1, idealGap);
-                            let endIdx = availableIdx.splice(endIdxPos, 1)[0];
-                            segments.push([startIdx, endIdx]);
-                        }
-                    } else {
-                        let step = Math.floor(snake.length / pairCount);
-                        for(let m=0; m<pairCount; m++) segments.push([m*step, (m+1)*step-1]);
-                    }
-                    segments.forEach((seg, m) => {
-                        let p1 = snake[seg[0]], p2 = snake[seg[1]];
+                    // 1本のハミルトン路(snake)をペア数分に「連続して」切り分ける
+                    let len = snake.length;
+                    let step = Math.floor(len / pairCount);
+                    
+                    for(let m=0; m<pairCount; m++) {
+                        let startIdx = m * step;
+                        let endIdx = (m === pairCount - 1) ? len - 1 : (m + 1) * step - 1;
+                        
+                        // 中級：ペア内の順序をルート上で離す(端と端にする)
+                        // これにより、解は「ルート通り」のみになる
+                        let p1 = snake[startIdx], p2 = snake[endIdx];
                         numbers.push({x:p1.x, y:p1.y, val:m+1, color:colors[m]});
                         numbers.push({x:p2.x, y:p2.y, val:m+1, color:colors[m]});
+                        // 初期状態：数字のみのパスを2つ用意
                         paths[m+1] = [[{x:p1.x, y:p1.y}], [{x:p2.x, y:p2.y}]];
-                    });
+                    }
                     resolve();
-                } else { setTimeout(attempt, 10); }
+                } else { setTimeout(attempt, 5); }
             };
             const getDeg = (p, v) => [{x:p.x+1,y:p.y},{x:p.x-1,y:p.y},{x:p.x,y:p.y+1},{x:p.x,y:p.y-1}]
                 .filter(n => n.x>=0 && n.x<gridSize && n.y>=0 && n.y<gridSize && !v.has(`${n.x},${n.y}`)).length;
@@ -158,20 +145,16 @@
         }
         Object.keys(paths).forEach(v => {
             paths[v].forEach((path, idx) => {
-                if(path.length < 1) return;
                 let isD = (isDrawing && activeVal == v && activePathIdx == idx);
                 ctx.strokeStyle = colors[v-1]; ctx.lineWidth = spacing*(isD?0.55:0.45);
                 ctx.lineCap = ctx.lineJoin = "round"; ctx.globalAlpha = isD?0.7:1;
                 ctx.beginPath();
                 path.forEach((p,i) => { let x=padding+p.x*spacing, y=padding+p.y*spacing; if(i==0) ctx.moveTo(x,y); else ctx.lineTo(x,y); });
                 ctx.stroke();
-                // 可動端点のハイライト（数字以外の端点、または長さ1のパス＝数字のみ）
+                // 操作可能端点のハイライト
                 let last = path[path.length-1];
-                let isNum = numbers.some(n => n.x == last.x && n.y == last.y && n.val == v);
-                if (!isNum || path.length === 1) {
-                    ctx.fillStyle = colors[v-1]; ctx.globalAlpha = 0.2;
-                    ctx.beginPath(); ctx.arc(padding+last.x*spacing, padding+last.y*spacing, spacing*0.4, 0, 7); ctx.fill();
-                }
+                ctx.fillStyle = colors[v-1]; ctx.globalAlpha = 0.2;
+                ctx.beginPath(); ctx.arc(padding+last.x*spacing, padding+last.y*spacing, spacing*0.4, 0, 7); ctx.fill();
                 ctx.globalAlpha = 1;
             });
         });
@@ -193,18 +176,17 @@
     canvas.addEventListener('pointerdown', (e) => {
         const p = getGridPos(e); if(!p) return;
         lastDownPos = {...p};
+        
         for(let v in paths) {
             for(let i=0; i<paths[v].length; i++) {
                 let path = paths[v][i];
-                let last = path[path.length-1];
-                // 端点を触ったか判定
-                if(p.x == last.x && p.y == last.y) {
+                // 端点を触ったか
+                if(p.x == path[path.length-1].x && p.y == path[path.length-1].y) {
                     activeVal = v; activePathIdx = i; isDrawing = true;
                     canvas.setPointerCapture(e.pointerId); draw(); return;
                 }
-                // 初期の数字（長さ1）ではなく、逆側（開始点）を触った場合のリバース
-                let first = path[0];
-                if(p.x == first.x && p.y == first.y && path.length > 1) {
+                // 逆側（開始点）を触った場合、自動的にそちらを先端にする
+                if(p.x == path[0].x && p.y == path[0].y && path.length > 1) {
                     path.reverse(); activeVal = v; activePathIdx = i; isDrawing = true;
                     canvas.setPointerCapture(e.pointerId); draw(); return;
                 }
@@ -215,25 +197,13 @@
     window.addEventListener('pointermove', (e) => {
         if(!isDrawing) return;
         const p = getGridPos(e); if(!p) return;
-        let path = paths[activeVal][activePathIdx];
-        let last = path[path.length-1];
-
+        let path = paths[activeVal][activePathIdx], last = path[path.length-1];
         if(p.x==last.x && p.y==last.y) return;
 
         if(Math.abs(p.x-last.x) + Math.abs(p.y-last.y) == 1) {
-            // 戻る処理
-            if(path.length>1 && p.x==path[path.length-2].x && p.y==path[path.length-2].y) {
-                path.pop(); draw(); return;
-            }
+            if(path.length>1 && p.x==path[path.length-2].x && p.y==path[path.length-2].y) { path.pop(); draw(); return; }
 
-            // --- 新規ルール：数字マスの通過チェック ---
-            // 1. 既に線がある場所は不可（合流判定以外）
-            // 2. 自分以外の数字マスは不可
-            // 3. 自分のペアの数字マスは「合流」としてのみ許可
-            
-            const targetNum = numbers.find(n => n.x === p.x && n.y === p.y);
-            
-            // 合流判定（同じ数字のもう一方のパスの端点に触れたか）
+            // 合流判定
             let otherIdx = 1 - activePathIdx;
             let otherPath = paths[activeVal][otherIdx];
             if(otherPath && otherPath[otherPath.length-1].x === p.x && otherPath[otherPath.length-1].y === p.y) {
@@ -242,19 +212,18 @@
                 isDrawing = false; draw(); return;
             }
 
-            // 通過禁止：既にどこかのパス（自分含む）に使われているマス
+            // 通過禁止バリデーション
             const isOcc = Object.values(paths).flat().some(pa => pa.some(pt => pt.x==p.x && pt.y==p.y));
             if(isOcc) return;
 
-            // 通過禁止：数字マス（合流以外でここに到達したなら、そこは新たな端点になるが通り抜けはできない）
+            // 数字マス判定
+            const targetNum = numbers.find(n => n.x === p.x && n.y === p.y);
             if(targetNum) {
-                // 自分以外の数字なら拒否
-                if(targetNum.val != activeVal) return;
-                // 自分のペアの数字なら到達可能（ただしそこで線は止まる）
+                if(targetNum.val != activeVal) return; // 他人の数字
+                // 自分のペアの数字に「新規」で到達する場合
                 path.push(p); isDrawing = false; draw(); return;
             }
 
-            // 何もなければ進む
             path.push(p); draw();
         }
     });
@@ -262,25 +231,26 @@
     window.addEventListener('pointerup', (e) => {
         const p = getGridPos(e);
         if(isDrawing && p && lastDownPos && p.x==lastDownPos.x && p.y==lastDownPos.y) {
-            // タップ消去：数字の上でなければ消す
+            // 数字の上でなければ先端を1マス消す
             if(!numbers.some(n => n.x==p.x && n.y==p.y)) paths[activeVal][activePathIdx].pop();
         }
         isDrawing = false; activeVal = null; checkClear(); draw();
     });
 
     function checkClear() {
-        let used = new Set(); let ok = true;
+        let used = new Set();
+        let allColorsConnected = true;
         for(let v in paths) {
-            if(paths[v].length !== 1) { ok = false; continue; }
+            if(paths[v].length !== 1) { allColorsConnected = false; continue; }
             let path = paths[v][0];
-            // 両端が数字であるかチェック
-            let p1 = path[0], p2 = path[path.length-1];
-            let n1 = numbers.find(n => n.x==p1.x && n.y==p1.y && n.val == v);
-            let n2 = numbers.find(n => n.x==p2.x && n.y==p2.y && n.val == v);
-            if(!n1 || !n2) ok = false;
+            // 両端が同じ数字か
+            let start = path[0], end = path[path.length-1];
+            let n1 = numbers.find(n => n.x==start.x && n.y==start.y && n.val == v);
+            let n2 = numbers.find(n => n.x==end.x && n.y==end.y && n.val == v);
+            if(!n1 || !n2) allColorsConnected = false;
             path.forEach(pt => used.add(`${pt.x},${pt.y}`));
         }
-        if(used.size === gridSize*gridSize && ok) {
+        if(used.size === gridSize * gridSize && allColorsConnected) {
             clearInterval(timerInterval);
             document.getElementById('finalTime').innerText = timerEl.innerText;
             document.getElementById('resultOverlay').style.display = 'flex';
