@@ -418,10 +418,10 @@
     async function generateLevel() {
         return new Promise((resolve) => {
             const startTimeGen = performance.now();
-            const timeLimitMs = 5000; // 最大5秒まで粘る（10x10 対応）
+            const timeLimitMs = 7000; // 少し余裕を増やす
 
-            // 難易度によって必要な複雑さのしきい値を調整（ざっくり）
-            const baseThreshold = gridSize * gridSize * pairCount * 5;
+            // 難易度しきい値（小さめにしてまずは生成を優先）
+            const baseThreshold = gridSize * pairCount * 10;
 
             const attempt = () => {
                 if (performance.now() - startTimeGen > timeLimitMs) {
