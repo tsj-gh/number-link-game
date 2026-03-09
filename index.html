@@ -384,13 +384,21 @@
             pairs.push({ id, start: [e1.r, e1.c], end: [e2.r, e2.c] });
         }
 
-        // 3. ユニーク解チェック（ソルバーは「端点だけを見て」全マス充填＆解数を数える）
+        // 3. ユニーク解チェック（ソルバーは端点を固定した状態で全マス充填＆解数を数える）
         const solveGrid = Array.from({ length: n }, () => Array(n).fill(0));
         const solverPairs = pairs.map(p => ({
             id: p.id,
             start: p.start,
             end: p.end,
         }));
+
+        // スタート／ゴールのマスも線として事前に埋めておく
+        solverPairs.forEach(p => {
+            const [sr, sc] = p.start;
+            const [tr, tc] = p.end;
+            solveGrid[sr][sc] = p.id;
+            solveGrid[tr][tc] = p.id;
+        });
 
         const stats = {
             nodes: 0,
