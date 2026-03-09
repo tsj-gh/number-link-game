@@ -543,6 +543,8 @@
         e.preventDefault();
         if(showingAnswer) return;
         const p = getGridPos(e); if(!p) return;
+
+        // 既存パスの端点から描画開始
         for(let v in paths) {
             for(let i=0; i<paths[v].length; i++) {
                 let path = paths[v][i];
@@ -555,6 +557,19 @@
                     canvas.setPointerCapture(e.pointerId); draw(); return;
                 }
             }
+        }
+
+        // どのパスの端点でもないが「数字マス」の場合は、新たな端点としてパスを開始できるようにする
+        const num = numbers.find(n => n.x === p.x && n.y === p.y);
+        if (num) {
+            const v = String(num.val);
+            if (!paths[v]) paths[v] = [];
+            paths[v].push([{ x: num.x, y: num.y }]);
+            activeVal = v;
+            activePathIdx = paths[v].length - 1;
+            isDrawing = true;
+            canvas.setPointerCapture(e.pointerId);
+            draw();
         }
     });
 
