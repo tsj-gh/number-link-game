@@ -30,6 +30,8 @@
     サイズ: <select id="gridSelect" onchange="updatePairOptions()">
         <option value="4">4x4</option>
         <option value="6" selected>6x6</option>
+        <option value="8">8x8</option>
+        <option value="10">10x10</option>
     </select>
     ペア: <select id="pairSelect"></select>
     <button onclick="initGame()">生成 & スタート</button>
@@ -68,6 +70,7 @@
     const padding = 50;
     let numbers = [], paths = {}, isDrawing = false, activeVal = null, activePathIdx = null;
     let startTime, timerInterval;
+    let generatingDotsInterval = null;
     let answerSnake = []; 
     let showingAnswer = false;
 
@@ -75,12 +78,32 @@
 
     function updatePairOptions() {
         const size = parseInt(document.getElementById('gridSelect').value);
-        const maxPairs = size === 4 ? 3 : 5;
+        let minPairs, maxPairs, defaultPairs;
+
+        switch (size) {
+            case 4:
+                minPairs = 2; maxPairs = 3; defaultPairs = 2;
+                break;
+            case 6:
+                minPairs = 3; maxPairs = 5; defaultPairs = 4;
+                break;
+            case 8:
+                minPairs = 4; maxPairs = 6; defaultPairs = 5;
+                break;
+            case 10:
+                minPairs = 5; maxPairs = 6; defaultPairs = 5; // 10x10 は探索コストを抑えるためペア数控えめ
+                break;
+            default:
+                minPairs = 2; maxPairs = 5; defaultPairs = minPairs;
+                break;
+        }
+
         pairSelect.innerHTML = "";
-        for (let i = 2; i <= maxPairs; i++) {
+        for (let i = minPairs; i <= maxPairs; i++) {
             const opt = document.createElement('option');
-            opt.value = i; opt.innerText = i;
-            if (i === (size === 4 ? 2 : 3)) opt.selected = true;
+            opt.value = i;
+            opt.innerText = i;
+            if (i === defaultPairs) opt.selected = true;
             pairSelect.appendChild(opt);
         }
     }
@@ -220,7 +243,7 @@
         // 探索上限は盤面サイズとペア数から決める（難易度の目安にも使う）
         const stats = {
             nodes: 0,
-            nodeLimit: 80000,
+            nodeLimit: gridSize * gridSize * pairCount * 40, // 盤面が大きいほど多めに許容
         };
 
         const solCount = countSolutions(grid, pairs, 0, 2, stats);
@@ -238,10 +261,10 @@
     async function generateLevel() {
         return new Promise((resolve) => {
             const startTimeGen = performance.now();
-            const timeLimitMs = 3000; // 最大3秒まで粘る
+            const timeLimitMs = 5000; // 最大5秒まで粘る（10x10 対応）
 
             // 難易度によって必要な複雑さのしきい値を調整（ざっくり）
-            const baseThreshold = gridSize * gridSize * 30;
+            const baseThreshold = gridSize * gridSize * pairCount * 5;
 
             const attempt = () => {
                 if (performance.now() - startTimeGen > timeLimitMs) {
@@ -290,12 +313,34 @@
         canvasSize = Math.min(window.innerWidth - 40, 500);
         canvas.width = canvas.height = canvasSize;
         spacing = (canvasSize - padding * 2) / (gridSize - 1);
-        statusEl.innerText = "探索中...";
+
+        // 生成中アニメーション開始
+        let dots = 0;
+        statusEl.innerText = "探索中";
+        if (generatingDotsInterval) clearInterval(generatingDotsInterval);
+        generatingDotsInterval = setInterval(() => {
+            dots = (dots + 1) % 4; // 0,1,2,3 → 0〜3個のドット
+            statusEl.innerText = "探索中" + "・".repeat(dots);
+        }, 1000);
+
         showingAnswer = false;
         giveupBtn.style.display = "inline-block";
         timerEl.classList.remove("gave-up");
         clearInterval(timerInterval);
-        await generateLevel();
+
+        const ok = await generateLevel();
+
+        // 生成アニメーション停止
+        if (generatingDotsInterval) {
+            clearInterval(generatingDotsInterval);
+            generatingDotsInterval = null;
+        }
+
+        if (!ok) {
+            // 生成失敗時はゲーム開始しない
+            giveupBtn.style.display = "none";
+            return;
+        }
         statusEl.innerText = "Playing";
         startTime = Date.now();
         timerInterval = setInterval(updateTimer, 1000);
