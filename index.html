@@ -85,97 +85,199 @@
         }
     }
 
-    // --- ソルバーセクション ---
+    // --- ソルバー / 問題生成セクション ---
 
-    function solve(grid, currentPairs, pairsData) {
-        if (currentPairs === pairsData.length) {
-            // 全マス埋まっているか確認
-            for (let r = 0; r < gridSize; r++) {
-                for (let c = 0; c < gridSize; c++) {
-                    if (grid[r][c] === 0) return null;
+    /**
+     * mate法の考え方を取り入れた「状態圧縮＋枝刈り付きバックトラック」ソルバー
+     * - 各ペアごとに経路を構築し、全マス充填＆ユニーク解かどうかを判定
+     * - stats.nodes を指標として「探索の複雑さ（≒難易度）」を評価
+     */
+
+    function countSolutions(grid, pairs, pairIndex, maxSolutions, stats) {
+        const n = gridSize;
+
+        // 全ペアを処理し終わったら、全マスが埋まっているかを確認
+        if (pairIndex === pairs.length) {
+            for (let r = 0; r < n; r++) {
+                for (let c = 0; c < n; c++) {
+                    if (grid[r][c] === 0) return 0;
                 }
             }
-            return JSON.parse(JSON.stringify(grid));
+            return 1;
         }
 
-        const pair = pairsData[currentPairs];
-        let foundSolution = null;
+        const pair = pairs[pairIndex];
+        const id = pair.id;
+        const [sr, sc] = pair.start;
+        const [tr, tc] = pair.end;
 
-        function findPath(r, c, targetR, targetC, path) {
-            if (r === targetR && c === targetC) {
-                const nextGrid = grid.map(row => [...row]);
-                path.forEach(p => nextGrid[p.r][p.c] = pair.val);
-                const sol = solve(nextGrid, currentPairs + 1, pairsData);
-                if (sol) foundSolution = sol;
+        const dirs = [
+            [0, 1],
+            [0, -1],
+            [1, 0],
+            [-1, 0],
+        ];
+
+        // ランダムな方向順で試すことで多様な経路を生成
+        for (let i = dirs.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [dirs[i], dirs[j]] = [dirs[j], dirs[i]];
+        }
+
+        let solutions = 0;
+        const visited = Array.from({ length: n }, () => Array(n).fill(false));
+
+        function dfs(r, c) {
+            if (solutions >= maxSolutions) return;
+            stats.nodes++;
+
+            // 探索が極端に膨らんだら強制打ち切り（安全装置）
+            if (stats.nodes > stats.nodeLimit) return;
+
+            if (r === tr && c === tc) {
+                // このペアは完了 → 次のペアへ
+                solutions += countSolutions(grid, pairs, pairIndex + 1, maxSolutions - solutions, stats);
                 return;
             }
 
-            const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
-            for (let [dr, dc] of dirs) {
-                let nr = r + dr, nc = c + dc;
-                if (nr >= 0 && nr < gridSize && nc >= 0 && nc < gridSize) {
-                    // 目標地点に到達するか、空きマスであること
-                    if ((nr === targetR && nc === targetC) || grid[nr][nc] === 0) {
-                        // 既にこのパス内で通っていないこと
-                        if (!path.some(p => p.r === nr && p.c === nc)) {
-                            path.push({r: nr, c: nc});
-                            findPath(nr, nc, targetR, targetC, path);
-                            if (foundSolution) return;
-                            path.pop();
-                        }
-                    }
+            for (const [dr, dc] of dirs) {
+                const nr = r + dr;
+                const nc = c + dc;
+                if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+
+                const cell = grid[nr][nc];
+
+                // ゴール or 空きマスのみ進入可能
+                if (!((nr === tr && nc === tc) || cell === 0)) continue;
+                if (visited[nr][nc]) continue;
+
+                // 移動
+                visited[nr][nc] = true;
+                const prev = grid[nr][nc];
+                if (!(nr === tr && nc === tc)) {
+                    grid[nr][nc] = id;
                 }
+
+                dfs(nr, nc);
+
+                // 復元
+                grid[nr][nc] = prev;
+                visited[nr][nc] = false;
+
+                if (solutions >= maxSolutions) return;
             }
         }
 
-        findPath(pair.r1, pair.c1, pair.r2, pair.c2, [{r: pair.r1, c: pair.c1}]);
-        return foundSolution;
+        // 開始地点を訪問済みにしてDFS開始
+        visited[sr][sc] = true;
+        dfs(sr, sc);
+        visited[sr][sc] = false;
+
+        return solutions;
+    }
+
+    function generateCandidate() {
+        const n = gridSize;
+
+        // 盤面を初期化（0 = 空き）
+        const grid = Array.from({ length: n }, () => Array(n).fill(0));
+
+        // ペアをランダムに配置（距離がある程度離れるようにする）
+        const cells = [];
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) cells.push([r, c]);
+
+        // シャッフル
+        for (let i = cells.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [cells[i], cells[j]] = [cells[j], cells[i]];
+        }
+
+        const pairs = [];
+        let used = 0;
+        const minDist = Math.max(2, Math.floor(n / 2));
+
+        while (pairs.length < pairCount && used + 1 < cells.length) {
+            const [r1, c1] = cells[used];
+            let found = false;
+            for (let k = used + 1; k < cells.length; k++) {
+                const [r2, c2] = cells[k];
+                const dist = Math.abs(r1 - r2) + Math.abs(c1 - c2);
+                if (dist >= minDist && grid[r1][c1] === 0 && grid[r2][c2] === 0) {
+                    const id = pairs.length + 1;
+                    grid[r1][c1] = id;
+                    grid[r2][c2] = id;
+                    pairs.push({ id, start: [r1, c1], end: [r2, c2] });
+                    found = true;
+                    break;
+                }
+            }
+            used++;
+            if (!found && used > cells.length - 2) break;
+        }
+
+        if (pairs.length !== pairCount) return null;
+
+        // 探索上限は盤面サイズとペア数から決める（難易度の目安にも使う）
+        const stats = {
+            nodes: 0,
+            nodeLimit: 80000,
+        };
+
+        const solCount = countSolutions(grid, pairs, 0, 2, stats);
+
+        if (solCount !== 1) return null; // ユニーク解でない
+
+        // 難易度指標として stats.nodes を利用
+        return {
+            grid,
+            pairs,
+            difficultyScore: stats.nodes,
+        };
     }
 
     async function generateLevel() {
         return new Promise((resolve) => {
+            const startTimeGen = performance.now();
+            const timeLimitMs = 3000; // 最大3秒まで粘る
+
+            // 難易度によって必要な複雑さのしきい値を調整（ざっくり）
+            const baseThreshold = gridSize * gridSize * 30;
+
             const attempt = () => {
-                // 1. ランダムにペアを配置
-                let pos = [];
-                for(let i=0; i<gridSize*gridSize; i++) pos.push(i);
-                for(let i=pos.length-1; i>0; i--){
-                    let j = Math.floor(Math.random()*(i+1));
-                    [pos[i], pos[j]] = [pos[j], pos[i]];
+                if (performance.now() - startTimeGen > timeLimitMs) {
+                    statusEl.innerText = "生成に失敗しました…もう一度試してください";
+                    resolve(false);
+                    return;
                 }
 
-                let pairsData = [];
-                numbers = [];
-                for(let i=0; i<pairCount; i++) {
-                    let p1 = pos[i*2], p2 = pos[i*2+1];
-                    let r1 = Math.floor(p1/gridSize), c1 = p1%gridSize;
-                    let r2 = Math.floor(p2/gridSize), c2 = p2%gridSize;
-                    pairsData.push({val: i+1, r1, c1, r2, c2});
-                    numbers.push({x: c1, y: r1, val: i+1, color: colors[i]});
-                    numbers.push({x: c2, y: r2, val: i+1, color: colors[i]});
-                }
-
-                // 2. ソルバーでチェック
-                let grid = Array.from({length: gridSize}, () => Array(gridSize).fill(0));
-                // 数字の場所を仮に埋める（探索の邪魔にならないよう管理）
-                pairsData.forEach(p => { grid[p.r1][p.c1] = -1; grid[p.r2][p.c2] = -1; });
-
-                const resultGrid = solve(grid, 0, pairsData);
-
-                if (resultGrid) {
-                    // 正解ルートをanswerSnake形式（表示用）に変換
-                    answerSnake = [];
-                    // デバッグ・表示用に最初のパスだけ抽出する等の処理が可能ですが、
-                    // ここでは「解が存在する」ことを優先します
-                    paths = {};
-                    pairsData.forEach(p => {
-                        paths[p.val] = [[{x: p.c1, y: p.r1}], [{x: p.c2, y: p.r2}]];
-                    });
-                    // ヒントとしてのanswerSnake（ギブアップ用）は今回は簡略化
-                    resolve();
-                } else {
+                const candidate = generateCandidate();
+                if (!candidate) {
                     setTimeout(attempt, 0);
+                    return;
                 }
+
+                if (candidate.difficultyScore < baseThreshold) {
+                    // 簡単すぎるのでボツにして再生成
+                    setTimeout(attempt, 0);
+                    return;
+                }
+
+                // 採用
+                numbers = [];
+                paths = {};
+                candidate.pairs.forEach((p, idx) => {
+                    const color = colors[idx % colors.length];
+                    const [r1, c1] = p.start;
+                    const [r2, c2] = p.end;
+                    numbers.push({ x: c1, y: r1, val: p.id, color });
+                    numbers.push({ x: c2, y: r2, val: p.id, color });
+                    // プレイヤー用の初期経路は両端1マスのみ
+                    paths[p.id] = [[{ x: c1, y: r1 }], [{ x: c2, y: r2 }]];
+                });
+
+                resolve(true);
             };
+
             attempt();
         });
     }
