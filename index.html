@@ -199,60 +199,209 @@
         return solutions;
     }
 
-    function generateCandidate() {
+    // --- 解答盤面（全マスを覆う線の森）生成用ユーティリティ ---
+
+    function computeDegreesAndEndpoints(grid) {
+        const n = grid.length;
+        const deg = Array.from({ length: n }, () => Array(n).fill(0));
+        let filled = 0;
+
+        for (let r = 0; r < n; r++) {
+            for (let c = 0; c < n; c++) {
+                const id = grid[r][c];
+                if (!id) continue;
+                filled++;
+                const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+                for (const [dr, dc] of dirs) {
+                    const nr = r + dr, nc = c + dc;
+                    if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+                    if (grid[nr][nc] === id) deg[r][c]++;
+                }
+            }
+        }
+
+        const endpointsPerId = new Map();
+        for (let r = 0; r < n; r++) {
+            for (let c = 0; c < n; c++) {
+                const id = grid[r][c];
+                if (!id) continue;
+                if (deg[r][c] === 1) {
+                    if (!endpointsPerId.has(id)) endpointsPerId.set(id, []);
+                    endpointsPerId.get(id).push({ r, c });
+                }
+                // deg 0（まだ伸びていない種）も端点扱いしたいので別処理
+                if (deg[r][c] === 0) {
+                    if (!endpointsPerId.has(id)) endpointsPerId.set(id, []);
+                    endpointsPerId.get(id).push({ r, c });
+                }
+            }
+        }
+
+        return { deg, endpointsPerId, filled };
+    }
+
+    function evaluateForestGrid(grid) {
+        const n = grid.length;
+        let score = 0;
+        let filled = 0;
+        let emptyIsolatedPenalty = 0;
+
+        for (let r = 0; r < n; r++) {
+            for (let c = 0; c < n; c++) {
+                if (grid[r][c]) {
+                    filled++;
+                } else {
+                    let emptyNeighbors = 0;
+                    const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+                    for (const [dr, dc] of dirs) {
+                        const nr = r + dr, nc = c + dc;
+                        if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+                        if (!grid[nr][nc]) emptyNeighbors++;
+                    }
+                    if (emptyNeighbors <= 1) emptyIsolatedPenalty += 5; // 詰みやすい孤立空きマスを強く罰する
+                }
+            }
+        }
+
+        // カバー率を主な指標にしつつ、孤立空きマスを罰する
+        score += filled * 10;
+        score -= emptyIsolatedPenalty;
+
+        return score;
+    }
+
+    function generateFullCoverByBeam() {
         const n = gridSize;
+        const beamWidth = 20;
+        const maxSteps = n * n * 8;
 
-        // 盤面を初期化（0 = 空き）
-        const grid = Array.from({ length: n }, () => Array(n).fill(0));
-
-        // ペアをランダムに配置（距離がある程度離れるようにする）
+        // 初期グリッド：pairCount 個の種マスをランダム配置
         const cells = [];
-        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) cells.push([r, c]);
-
-        // シャッフル
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) cells.push({ r, c });
         for (let i = cells.length - 1; i > 0; i--) {
             const j = Math.floor(Math.random() * (i + 1));
             [cells[i], cells[j]] = [cells[j], cells[i]];
         }
 
-        const pairs = [];
-        let used = 0;
-        const minDist = Math.max(2, Math.floor(n / 2));
-
-        while (pairs.length < pairCount && used + 1 < cells.length) {
-            const [r1, c1] = cells[used];
-            let found = false;
-            for (let k = used + 1; k < cells.length; k++) {
-                const [r2, c2] = cells[k];
-                const dist = Math.abs(r1 - r2) + Math.abs(c1 - c2);
-                if (dist >= minDist && grid[r1][c1] === 0 && grid[r2][c2] === 0) {
-                    const id = pairs.length + 1;
-                    grid[r1][c1] = id;
-                    grid[r2][c2] = id;
-                    pairs.push({ id, start: [r1, c1], end: [r2, c2] });
-                    found = true;
-                    break;
-                }
-            }
-            used++;
-            if (!found && used > cells.length - 2) break;
+        const initGrid = Array.from({ length: n }, () => Array(n).fill(0));
+        for (let id = 1; id <= pairCount; id++) {
+            const cell = cells[id - 1];
+            initGrid[cell.r][cell.c] = id;
         }
 
-        if (pairs.length !== pairCount) return null;
+        let beam = [{
+            grid: initGrid,
+            score: evaluateForestGrid(initGrid),
+        }];
 
-        // 探索上限は盤面サイズとペア数から決める（難易度の目安にも使う）
+        for (let step = 0; step < maxSteps; step++) {
+            // 完成盤面がビーム内にあれば採用
+            for (const state of beam) {
+                const { deg, endpointsPerId, filled } = computeDegreesAndEndpoints(state.grid);
+                if (filled === n * n) {
+                    // 各 id が少なくとも1セル持ち、端点が2つ以上あるものだけに限定
+                    let ok = true;
+                    for (let id = 1; id <= pairCount; id++) {
+                        let hasCell = false;
+                        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) {
+                            if (state.grid[r][c] === id) { hasCell = true; break; }
+                        }
+                        const eps = endpointsPerId.get(id) || [];
+                        if (!hasCell || eps.length < 2) { ok = false; break; }
+                    }
+                    if (ok) return state.grid;
+                }
+            }
+
+            const nextStates = [];
+
+            for (const state of beam) {
+                const { endpointsPerId } = computeDegreesAndEndpoints(state.grid);
+
+                for (let id = 1; id <= pairCount; id++) {
+                    const endpoints = endpointsPerId.get(id) || [];
+                    for (const ep of endpoints) {
+                        const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+                        for (const [dr, dc] of dirs) {
+                            const nr = ep.r + dr, nc = ep.c + dc;
+                            if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+                            if (state.grid[nr][nc] !== 0) continue; // 他の線や自分自身へのループは作らない
+
+                            const newGrid = state.grid.map(row => row.slice());
+                            newGrid[nr][nc] = id;
+
+                            const newScore = evaluateForestGrid(newGrid);
+                            nextStates.push({ grid: newGrid, score: newScore });
+                        }
+                    }
+                }
+            }
+
+            if (nextStates.length === 0) break;
+
+            nextStates.sort((a, b) => b.score - a.score);
+            beam = nextStates.slice(0, beamWidth);
+        }
+
+        return null;
+    }
+
+    function generateCandidate() {
+        const n = gridSize;
+
+        // 1. ビームサーチで「全マスを覆う線の森」を生成
+        const forestGrid = generateFullCoverByBeam();
+        if (!forestGrid) return null;
+
+        // 2. 各線成分（id ごと）から端点ペアを抽出して Numberlink のペアに変換
+        const pairs = [];
+        for (let id = 1; id <= pairCount; id++) {
+            const cells = [];
+            for (let r = 0; r < n; r++) {
+                for (let c = 0; c < n; c++) {
+                    if (forestGrid[r][c] === id) cells.push({ r, c });
+                }
+            }
+            if (!cells.length) return null;
+
+            // 度数を計算して端点を拾う
+            const deg = Array.from({ length: n }, () => Array(n).fill(0));
+            for (const { r, c } of cells) {
+                const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+                for (const [dr, dc] of dirs) {
+                    const nr = r + dr, nc = c + dc;
+                    if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+                    if (forestGrid[nr][nc] === id) deg[r][c]++;
+                }
+            }
+
+            const endpoints = cells.filter(({ r, c }) => deg[r][c] === 1 || deg[r][c] === 0);
+            if (endpoints.length < 2) return null;
+
+            // とりあえず最初の2点を端点として採用（将来的に「最遠ペア」などにしても良い）
+            const e1 = endpoints[0];
+            const e2 = endpoints[1];
+            pairs.push({ id, start: [e1.r, e1.c], end: [e2.r, e2.c] });
+        }
+
+        // 3. ユニーク解チェック（ソルバーは「端点だけを見て」全マス充填＆解数を数える）
+        const solveGrid = Array.from({ length: n }, () => Array(n).fill(0));
+        const solverPairs = pairs.map(p => ({
+            id: p.id,
+            start: p.start,
+            end: p.end,
+        }));
+
         const stats = {
             nodes: 0,
-            nodeLimit: gridSize * gridSize * pairCount * 40, // 盤面が大きいほど多めに許容
+            nodeLimit: gridSize * gridSize * pairCount * 40,
         };
 
-        const solCount = countSolutions(grid, pairs, 0, 2, stats);
+        const solCount = countSolutions(solveGrid, solverPairs, 0, 2, stats);
+        if (solCount !== 1) return null;
 
-        if (solCount !== 1) return null; // ユニーク解でない
-
-        // 難易度指標として stats.nodes を利用
         return {
-            grid,
+            grid: forestGrid,
             pairs,
             difficultyScore: stats.nodes,
         };
