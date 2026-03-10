@@ -160,7 +160,97 @@
         return solutions;
     }
 
-    // --- 解答盤面（全マスを覆う線の森）生成用ユーティリティ ---
+    // --- 単純な SAT ソルバー（DPLL） ---
+
+    function solveSat(numVars, clauses, timeLimitMs) {
+        const assignment = new Int8Array(numVars + 1); // 0: 未割当, 1: true, -1: false
+        const start = performance.now();
+
+        function unitProp() {
+            while (true) {
+                let changed = false;
+                for (let ci = 0; ci < clauses.length; ci++) {
+                    const clause = clauses[ci];
+                    let satisfied = false;
+                    let unassignedCount = 0;
+                    let lastUnassigned = 0;
+
+                    for (let k = 0; k < clause.length; k++) {
+                        const lit = clause[k];
+                        const v = lit > 0 ? lit : -lit;
+                        const val = assignment[v];
+                        if (val === 0) {
+                            unassignedCount++;
+                            lastUnassigned = lit;
+                        } else {
+                            const isTrue = (val === 1 && lit > 0) || (val === -1 && lit < 0);
+                            if (isTrue) {
+                                satisfied = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (!satisfied) {
+                        if (unassignedCount === 0) {
+                            return false; // 矛盾
+                        }
+                        if (unassignedCount === 1) {
+                            const lit = lastUnassigned;
+                            const v = lit > 0 ? lit : -lit;
+                            const val = lit > 0 ? 1 : -1;
+                            if (assignment[v] === 0) {
+                                assignment[v] = val;
+                                changed = true;
+                            } else if (assignment[v] !== val) {
+                                return false; // 既存割当と矛盾
+                            }
+                        }
+                    }
+                }
+                if (!changed) return true;
+            }
+        }
+
+        function chooseVar() {
+            for (let v = 1; v <= numVars; v++) {
+                if (assignment[v] === 0) return v;
+            }
+            return 0;
+        }
+
+        function dpll() {
+            if (performance.now() - start > timeLimitMs) {
+                return null; // タイムアウト
+            }
+            if (!unitProp()) return false;
+
+            const v = chooseVar();
+            if (v === 0) return true; // すべて割当済み
+
+            const saved = assignment.slice();
+
+            assignment[v] = 1;
+            let res = dpll();
+            if (res === true) return true;
+            if (res === null) return null;
+
+            assignment.set(saved);
+            assignment[v] = -1;
+            res = dpll();
+            if (res === true) return true;
+            if (res === null) return null;
+
+            assignment.set(saved);
+            return false;
+        }
+
+        const ok = dpll();
+        if (ok === true) return assignment;
+        return null;
+    }
+
+    // --- 解答盤面（全マスを覆う線の森）生成用ユーティリティ（6x6 以下専用） ---
 
     function computeDegreesAndEndpoints(grid) {
         const n = grid.length;
@@ -310,46 +400,39 @@
     function generateCandidate() {
         const n = gridSize;
 
-        // 1. ビームサーチで「全マスを覆う線の森」を生成
-        const forestGrid = generateFullCoverByBeam();
-        if (!forestGrid) return null;
-
-        // 2. 各線成分（id ごと）から端点ペアを抽出して Numberlink のペアに変換
-        const pairs = [];
-        for (let id = 1; id <= pairCount; id++) {
-            const cells = [];
-            for (let r = 0; r < n; r++) {
-                for (let c = 0; c < n; c++) {
-                    if (forestGrid[r][c] === id) cells.push({ r, c });
-                }
-            }
-            if (!cells.length) return null;
-
-            // 度数を計算して端点を拾う
-            const deg = Array.from({ length: n }, () => Array(n).fill(0));
-            for (const { r, c } of cells) {
-                const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
-                for (const [dr, dc] of dirs) {
-                    const nr = r + dr, nc = c + dc;
-                    if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
-                    if (forestGrid[nr][nc] === id) deg[r][c]++;
-                }
-            }
-
-            const endpoints = cells.filter(({ r, c }) => deg[r][c] === 1 || deg[r][c] === 0);
-            if (endpoints.length < 2) return null;
-
-            // とりあえず最初の2点を端点として採用（将来的に「最遠ペア」などにしても良い）
-            const e1 = endpoints[0];
-            const e2 = endpoints[1];
-            pairs.push({ id, start: [e1.r, e1.c], end: [e2.r, e2.c] });
-        }
-
-        // 3. ユニーク解チェック（ソルバーは端点を固定した状態で全マス充填＆解数を数える）
-        // 解答盤面の形状から難易度を評価（8x8 以上はユニーク解チェックを行わない）
-        let difficultyScore = 0;
-
+        // --- 6x6 以下：既存のビームサーチ＋ユニーク解チェックをそのまま利用 ---
         if (gridSize <= 6) {
+            const forestGrid = generateFullCoverByBeam();
+            if (!forestGrid) return null;
+
+            const pairs = [];
+            for (let id = 1; id <= pairCount; id++) {
+                const cells = [];
+                for (let r = 0; r < n; r++) {
+                    for (let c = 0; c < n; c++) {
+                        if (forestGrid[r][c] === id) cells.push({ r, c });
+                    }
+                }
+                if (!cells.length) return null;
+
+                const deg = Array.from({ length: n }, () => Array(n).fill(0));
+                for (const { r, c } of cells) {
+                    const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+                    for (const [dr, dc] of dirs) {
+                        const nr = r + dr, nc = c + dc;
+                        if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+                        if (forestGrid[nr][nc] === id) deg[r][c]++;
+                    }
+                }
+
+                const endpoints = cells.filter(({ r, c }) => deg[r][c] === 1 || deg[r][c] === 0);
+                if (endpoints.length < 2) return null;
+
+                const e1 = endpoints[0];
+                const e2 = endpoints[1];
+                pairs.push({ id, start: [e1.r, e1.c], end: [e2.r, e2.c] });
+            }
+
             const solveGrid = Array.from({ length: n }, () => Array(n).fill(0));
             const solverPairs = pairs.map(p => ({
                 id: p.id,
@@ -357,7 +440,6 @@
                 end: p.end,
             }));
 
-            // スタート／ゴールのマスも線として事前に埋めておく
             solverPairs.forEach(p => {
                 const [sr, sc] = p.start;
                 const [tr, tc] = p.end;
@@ -372,40 +454,185 @@
 
             const solCount = countSolutions(solveGrid, solverPairs, 0, 2, stats);
             if (solCount !== 1) return null;
-            difficultyScore = stats.nodes;
-        } else {
-            // 8x8 以上：パスの曲がり角と絡み具合で難易度をざっくり評価
-            let bends = 0;
-            let adjacency = 0;
-            const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
 
-            for (let id = 1; id <= pairCount; id++) {
-                const cells = [];
-                for (let r = 0; r < n; r++) {
-                    for (let c = 0; c < n; c++) {
-                        if (forestGrid[r][c] === id) cells.push({ r, c });
-                    }
+            return {
+                grid: forestGrid,
+                pairs,
+                difficultyScore: stats.nodes,
+            };
+        }
+
+        // --- 8x8 以上：SAT ソルバーを用いたランダムペア配置方式 ---
+
+        // 端点ペアをランダム配置
+        const cells = [];
+        for (let r = 0; r < n; r++) for (let c = 0; c < n; c++) cells.push({ r, c });
+        for (let i = cells.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [cells[i], cells[j]] = [cells[j], cells[i]];
+        }
+
+        const terminals = [];
+        const isTerminal = Array.from({ length: n }, () => Array(n).fill(false));
+        let idx = 0;
+        for (let id = 1; id <= pairCount; id++) {
+            if (idx + 1 >= cells.length) return null;
+            const c1 = cells[idx++];
+            const c2 = cells[idx++];
+            terminals.push({ id, r1: c1.r, c1: c1.c, r2: c2.r, c2: c2.c });
+            isTerminal[c1.r][c1.c] = true;
+            isTerminal[c2.r][c2.c] = true;
+        }
+
+        // SAT 変数の割り当て
+        const vertCount = (n - 1) * n;
+        const horizCount = n * (n - 1);
+        const edgeOffset = 0;
+        const edgeHOffset = vertCount;
+        const labelOffset = vertCount + horizCount;
+
+        function vertEdgeVar(i, j) { // (i,j) と (i+1,j) を結ぶ縦辺
+            return edgeOffset + (i * n + j) + 1;
+        }
+        function horizEdgeVar(i, j) { // (i,j) と (i,j+1) を結ぶ横辺
+            return edgeHOffset + (i * (n - 1) + j) + 1;
+        }
+        function labelVar(i, j, a) { // マス(i,j) がラベル a を持つか
+            return labelOffset + ((i * n + j) * pairCount + (a - 1)) + 1;
+        }
+
+        const numVars = labelOffset + n * n * pairCount;
+        const clauses = [];
+        const addClause = (lits) => { clauses.push(lits); };
+
+        // 各マスの incident edges を準備
+        const incidentEdges = Array.from({ length: n }, () => Array.from({ length: n }, () => []));
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n; j++) {
+                const list = incidentEdges[i][j];
+                if (i > 0) list.push(vertEdgeVar(i - 1, j));
+                if (i < n - 1) list.push(vertEdgeVar(i, j));
+                if (j > 0) list.push(horizEdgeVar(i, j - 1));
+                if (j < n - 1) list.push(horizEdgeVar(i, j));
+            }
+        }
+
+        // 端点・非端点ごとの次数制約
+        function addAtLeastOne(vars) {
+            if (vars.length === 0) return;
+            addClause(vars.slice());
+        }
+        function addAtMostOne(vars) {
+            for (let i = 0; i < vars.length; i++) {
+                for (let j = i + 1; j < vars.length; j++) {
+                    addClause([-vars[i], -vars[j]]);
                 }
-                // 各セルについて、同じ id でつながる隣接方向を数える
-                for (const { r, c } of cells) {
-                    const neighbors = [];
-                    for (const [dr, dc] of dirs) {
-                        const nr = r + dr, nc = c + dc;
-                        if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
-                        if (forestGrid[nr][nc] === id) neighbors.push([dr, dc]);
-                        else if (forestGrid[nr][nc] !== 0) adjacency++; // 他線との近接
-                    }
-                    if (neighbors.length === 2) {
-                        const [d1, d2] = neighbors;
-                        if (d1[0] !== d2[0] && d1[1] !== d2[1]) bends++; // 直交していれば曲がり角
+            }
+        }
+        function addAtMostTwo(vars) {
+            for (let i = 0; i < vars.length; i++) {
+                for (let j = i + 1; j < vars.length; j++) {
+                    for (let k = j + 1; k < vars.length; k++) {
+                        addClause([-vars[i], -vars[j], -vars[k]]);
                     }
                 }
             }
-            difficultyScore = bends * 2 + adjacency;
+        }
+        function addNotEqualOne(vars) {
+            // 「ちょうど1本」のパターンをすべて否定する (論理圧縮された形)
+            const m = vars.length;
+            for (let i = 0; i < m; i++) {
+                const lits = [];
+                for (let j = 0; j < m; j++) {
+                    lits.push(i === j ? -vars[j] : vars[j]);
+                }
+                addClause(lits);
+            }
         }
 
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n; j++) {
+                const edges = incidentEdges[i][j];
+                if (edges.length === 0) continue;
+                if (isTerminal[i][j]) {
+                    // 端点：次数 = 1
+                    addAtLeastOne(edges);
+                    addAtMostOne(edges);
+                } else {
+                    // 非端点：次数 = 2 （0,1,3,4 を禁止）
+                    addAtMostTwo(edges);
+                    addNotEqualOne(edges);
+                    addAtLeastOne(edges);
+                }
+            }
+        }
+
+        // ラベル変数 x_ij ∈ {1..pairCount}
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n; j++) {
+                const vars = [];
+                for (let a = 1; a <= pairCount; a++) {
+                    vars.push(labelVar(i, j, a));
+                }
+                // 少なくとも1つ
+                addClause(vars);
+                // 高々1つ
+                for (let a = 0; a < pairCount; a++) {
+                    for (let b = a + 1; b < pairCount; b++) {
+                        addClause([-vars[a], -vars[b]]);
+                    }
+                }
+            }
+        }
+
+        // 端点のラベル固定
+        terminals.forEach(t => {
+            addClause([labelVar(t.r1, t.c1, t.id)]);
+            addClause([labelVar(t.r2, t.c2, t.id)]);
+        });
+
+        // エッジとラベルの整合性 (Tamura+ 紙の式 (24)-(27))
+        for (let i = 0; i < n - 1; i++) {
+            for (let j = 0; j < n; j++) {
+                const sVar = vertEdgeVar(i, j);
+                for (let a = 1; a <= pairCount; a++) {
+                    const p1 = labelVar(i, j, a);
+                    const p2 = labelVar(i + 1, j, a);
+                    addClause([-sVar, -p1, p2]);
+                    addClause([-sVar, p1, -p2]);
+                }
+            }
+        }
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n - 1; j++) {
+                const eVar = horizEdgeVar(i, j);
+                for (let a = 1; a <= pairCount; a++) {
+                    const p1 = labelVar(i, j, a);
+                    const p2 = labelVar(i, j + 1, a);
+                    addClause([-eVar, -p1, p2]);
+                    addClause([-eVar, p1, -p2]);
+                }
+            }
+        }
+
+        // SAT ソルバー実行（1 インスタンスあたりタイムアウトを短めに設定）
+        const assign = solveSat(numVars, clauses, 2000);
+        if (!assign) return null;
+
+        // 難易度スコア：端点間マンハッタン距離の総和を簡易指標として用いる
+        let difficultyScore = 0;
+        const pairs = terminals.map(t => {
+            const d = Math.abs(t.r1 - t.r2) + Math.abs(t.c1 - t.c2);
+            difficultyScore += d;
+            return {
+                id: t.id,
+                start: [t.r1, t.c1],
+                end: [t.r2, t.c2],
+            };
+        });
+
         return {
-            grid: forestGrid,
+            grid: null,
             pairs,
             difficultyScore,
         };
@@ -414,12 +641,10 @@
     async function generateLevel() {
         return new Promise((resolve) => {
             const startTimeGen = performance.now();
-            const timeLimitMs = 50000; // 少し余裕を増やす
+            const timeLimitMs = 50000; // 大きな盤面向けに十分な余裕を確保
 
-            // 難易度しきい値（盤面サイズに応じて調整）
-            const baseThreshold = (gridSize <= 6)
-                ? gridSize * pairCount * 10      // 小さい盤面は元の DFS ノード数ベース
-                : gridSize * pairCount * 20;     // 大きい盤面は「曲がり角＋絡み」のスコアを少し高めに要求
+            // 難易度しきい値（6x6 以下のときのみ使用）
+            const baseThreshold = gridSize * pairCount * 10;
 
             const attempt = () => {
                 if (performance.now() - startTimeGen > timeLimitMs) {
@@ -470,7 +695,7 @@
                 pairCount = 3;
                 break;
             case 6:
-                pairCount = 5;
+                pairCount = 4;
                 break;
             case 8:
                 pairCount = 7;
@@ -507,7 +732,6 @@
 
         if (!ok) {
             // 生成失敗時はゲーム開始しない
-            giveupBtn.style.display = "none";
             return;
         }
         statusEl.innerText = "Playing";
