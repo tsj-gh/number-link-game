@@ -24,18 +24,13 @@
 <body>
 
 <div class="config">
-    検証モード: <select id="diffSelect">
-        <option value="solve" selected>ランダム配置＆ソルバー検証</option>
+    サイズ: <select id="gridSelect">
+        <option value="4">4x4（ペア3）</option>
+        <option value="6" selected>6x6（ペア4）</option>
+        <option value="8">8x8（ペア7）</option>
+        <option value="10">10x10（ペア9）</option>
     </select>
-    サイズ: <select id="gridSelect" onchange="updatePairOptions()">
-        <option value="4">4x4</option>
-        <option value="6" selected>6x6</option>
-        <option value="8">8x8</option>
-        <option value="10">10x10</option>
-    </select>
-    ペア: <select id="pairSelect"></select>
     <button onclick="initGame()">生成 & スタート</button>
-    <button id="giveupBtn" onclick="giveUp()">ギブアップ</button>
 </div>
 
 <div class="container">
@@ -44,9 +39,9 @@
         <canvas id="gameCanvas"></canvas>
     </div>
     <div class="side-panel">
-        <h3>💡 アルゴリズム検証</h3>
-        <p>このモードでは、数字をランダムに配置し、バックトラッキング・ソルバーが「全マスを埋める唯一の解」を見つけた場合のみゲームを開始します。</p>
-        <p>※サイズが大きいと計算に時間がかかる場合があります。</p>
+        <h3>💡 盤面自動生成</h3>
+        <p>選択したサイズごとに固定のペア数で、全マスを埋めるナンバーリンク盤面を自動生成します。</p>
+        <p>※サイズが大きいと生成に数秒かかる場合があります。</p>
     </div>
 </div>
 
@@ -63,8 +58,6 @@
     const ctx = canvas.getContext('2d');
     const statusEl = document.getElementById('status');
     const timerEl = document.getElementById('timer');
-    const pairSelect = document.getElementById('pairSelect');
-    const giveupBtn = document.getElementById('giveupBtn');
     
     let gridSize, pairCount, spacing, canvasSize;
     const padding = 50;
@@ -75,38 +68,6 @@
     let showingAnswer = false;
 
     const colors = ["#ff4757", "#2e86de", "#2ed573", "#ffa502", "#a29bfe", "#e17055", "#00cec9", "#6c5ce7", "#fdcb6e"];
-
-    function updatePairOptions() {
-        const size = parseInt(document.getElementById('gridSelect').value);
-        let minPairs, maxPairs, defaultPairs;
-
-        switch (size) {
-            case 4:
-                minPairs = 2; maxPairs = 3; defaultPairs = 2;
-                break;
-            case 6:
-                minPairs = 3; maxPairs = 5; defaultPairs = 4;
-                break;
-            case 8:
-                minPairs = 4; maxPairs = 6; defaultPairs = 5;
-                break;
-            case 10:
-                minPairs = 5; maxPairs = 6; defaultPairs = 5; // 10x10 は探索コストを抑えるためペア数控えめ
-                break;
-            default:
-                minPairs = 2; maxPairs = 5; defaultPairs = minPairs;
-                break;
-        }
-
-        pairSelect.innerHTML = "";
-        for (let i = minPairs; i <= maxPairs; i++) {
-            const opt = document.createElement('option');
-            opt.value = i;
-            opt.innerText = i;
-            if (i === defaultPairs) opt.selected = true;
-            pairSelect.appendChild(opt);
-        }
-    }
 
     // --- ソルバー / 問題生成セクション ---
 
@@ -385,33 +346,68 @@
         }
 
         // 3. ユニーク解チェック（ソルバーは端点を固定した状態で全マス充填＆解数を数える）
-        const solveGrid = Array.from({ length: n }, () => Array(n).fill(0));
-        const solverPairs = pairs.map(p => ({
-            id: p.id,
-            start: p.start,
-            end: p.end,
-        }));
+        // 解答盤面の形状から難易度を評価（8x8 以上はユニーク解チェックを行わない）
+        let difficultyScore = 0;
 
-        // スタート／ゴールのマスも線として事前に埋めておく
-        solverPairs.forEach(p => {
-            const [sr, sc] = p.start;
-            const [tr, tc] = p.end;
-            solveGrid[sr][sc] = p.id;
-            solveGrid[tr][tc] = p.id;
-        });
+        if (gridSize <= 6) {
+            const solveGrid = Array.from({ length: n }, () => Array(n).fill(0));
+            const solverPairs = pairs.map(p => ({
+                id: p.id,
+                start: p.start,
+                end: p.end,
+            }));
 
-        const stats = {
-            nodes: 0,
-            nodeLimit: gridSize * gridSize * pairCount * 40,
-        };
+            // スタート／ゴールのマスも線として事前に埋めておく
+            solverPairs.forEach(p => {
+                const [sr, sc] = p.start;
+                const [tr, tc] = p.end;
+                solveGrid[sr][sc] = p.id;
+                solveGrid[tr][tc] = p.id;
+            });
 
-        const solCount = countSolutions(solveGrid, solverPairs, 0, 2, stats);
-        if (solCount !== 1) return null;
+            const stats = {
+                nodes: 0,
+                nodeLimit: gridSize * gridSize * pairCount * 40,
+            };
+
+            const solCount = countSolutions(solveGrid, solverPairs, 0, 2, stats);
+            if (solCount !== 1) return null;
+            difficultyScore = stats.nodes;
+        } else {
+            // 8x8 以上：パスの曲がり角と絡み具合で難易度をざっくり評価
+            let bends = 0;
+            let adjacency = 0;
+            const dirs = [[0,1],[0,-1],[1,0],[-1,0]];
+
+            for (let id = 1; id <= pairCount; id++) {
+                const cells = [];
+                for (let r = 0; r < n; r++) {
+                    for (let c = 0; c < n; c++) {
+                        if (forestGrid[r][c] === id) cells.push({ r, c });
+                    }
+                }
+                // 各セルについて、同じ id でつながる隣接方向を数える
+                for (const { r, c } of cells) {
+                    const neighbors = [];
+                    for (const [dr, dc] of dirs) {
+                        const nr = r + dr, nc = c + dc;
+                        if (nr < 0 || nr >= n || nc < 0 || nc >= n) continue;
+                        if (forestGrid[nr][nc] === id) neighbors.push([dr, dc]);
+                        else if (forestGrid[nr][nc] !== 0) adjacency++; // 他線との近接
+                    }
+                    if (neighbors.length === 2) {
+                        const [d1, d2] = neighbors;
+                        if (d1[0] !== d2[0] && d1[1] !== d2[1]) bends++; // 直交していれば曲がり角
+                    }
+                }
+            }
+            difficultyScore = bends * 2 + adjacency;
+        }
 
         return {
             grid: forestGrid,
             pairs,
-            difficultyScore: stats.nodes,
+            difficultyScore,
         };
     }
 
@@ -420,8 +416,10 @@
             const startTimeGen = performance.now();
             const timeLimitMs = 7000; // 少し余裕を増やす
 
-            // 難易度しきい値（小さめにしてまずは生成を優先）
-            const baseThreshold = gridSize * pairCount * 10;
+            // 難易度しきい値（盤面サイズに応じて調整）
+            const baseThreshold = (gridSize <= 6)
+                ? gridSize * pairCount * 10      // 小さい盤面は元の DFS ノード数ベース
+                : gridSize * pairCount * 20;     // 大きい盤面は「曲がり角＋絡み」のスコアを少し高めに要求
 
             const attempt = () => {
                 if (performance.now() - startTimeGen > timeLimitMs) {
@@ -466,7 +464,22 @@
 
     async function initGame() {
         gridSize = parseInt(document.getElementById('gridSelect').value);
-        pairCount = parseInt(pairSelect.value);
+        // サイズごとにペア数を固定
+        switch (gridSize) {
+            case 4:
+                pairCount = 3;
+                break;
+            case 6:
+                pairCount = 4;
+                break;
+            case 8:
+                pairCount = 7;
+                break;
+            case 10:
+            default:
+                pairCount = 9;
+                break;
+        }
         canvasSize = Math.min(window.innerWidth - 40, 500);
         canvas.width = canvas.height = canvasSize;
         spacing = (canvasSize - padding * 2) / (gridSize - 1);
@@ -481,7 +494,6 @@
         }, 1000);
 
         showingAnswer = false;
-        giveupBtn.style.display = "inline-block";
         timerEl.classList.remove("gave-up");
         clearInterval(timerInterval);
 
@@ -621,19 +633,8 @@
         }
     }
 
-    function giveUp() {
-        if(isDrawing) return;
-        showingAnswer = true;
-        clearInterval(timerInterval);
-        timerEl.innerText = "Give Up!";
-        timerEl.classList.add("gave-up");
-        giveupBtn.style.display = "none";
-        statusEl.innerText = "Closed";
-        draw();
-    }
-
     function closeClear() { document.getElementById('clearOverlay').style.display='none'; initGame(); }
-    updatePairOptions(); initGame();
+    initGame();
 </script>
 </body>
 </html>
