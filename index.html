@@ -615,8 +615,10 @@
             }
         }
 
-        // SAT ソルバー実行（1 インスタンスあたりタイムアウトを短めに設定）
-        const assign = solveSat(numVars, clauses, 2000);
+        // SAT ソルバー実行
+        // 8x8 と 10x10 で挙動を分ける（10x10 はインスタンスごとのタイムアウトを短くして試行回数を増やす）
+        const perInstanceLimit = gridSize >= 10 ? 800 : 2000;
+        const assign = solveSat(numVars, clauses, perInstanceLimit);
         if (!assign) return null;
 
         // 難易度スコア：端点間マンハッタン距離の総和を簡易指標として用いる
@@ -659,7 +661,7 @@
                     return;
                 }
 
-                if (gridSize <= 6 && candidate.difficultyScore < baseThreshold) {
+                if (candidate.difficultyScore < baseThreshold) {
                     // 簡単すぎるのでボツにして再生成
                     setTimeout(attempt, 0);
                     return;
@@ -695,10 +697,10 @@
                 pairCount = 3;
                 break;
             case 6:
-                pairCount = 5;
+                pairCount = 5; // 6x6 はペア5
                 break;
             case 8:
-                pairCount = 9;
+                pairCount = 8; // 8x8 はペア8
                 break;
             case 10:
             default:
