@@ -414,7 +414,7 @@
     async function generateLevel() {
         return new Promise((resolve) => {
             const startTimeGen = performance.now();
-            const timeLimitMs = 7000; // 少し余裕を増やす
+            const timeLimitMs = 20000; // 少し余裕を増やす
 
             // 難易度しきい値（盤面サイズに応じて調整）
             const baseThreshold = (gridSize <= 6)
