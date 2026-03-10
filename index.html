@@ -434,7 +434,7 @@
                     return;
                 }
 
-                if (candidate.difficultyScore < baseThreshold) {
+                if (gridSize <= 6 && candidate.difficultyScore < baseThreshold) {
                     // 簡単すぎるのでボツにして再生成
                     setTimeout(attempt, 0);
                     return;
