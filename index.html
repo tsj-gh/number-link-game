@@ -27,7 +27,7 @@
     サイズ: <select id="gridSelect">
         <option value="4">4x4（ペア3）</option>
         <option value="6" selected>6x6（ペア5）</option>
-        <option value="8">8x8（ペア8）</option>
+        <option value="8">8x8（ペア7）</option>
         <option value="10">10x10（ペア9）</option>
     </select>
     <button onclick="initGame()">生成 & スタート</button>
@@ -160,41 +160,21 @@
         return solutions;
     }
 
-    // --- SAT ソルバー（DPLL + ウォッチリスト単位伝播、IPSJ 論文の工夫を反映） ---
+    // --- 単純な SAT ソルバー（DPLL） ---
 
-    function solveSat(numVars, clauses, timeLimitMs, edgeVarEnd) {
+    function solveSat(numVars, clauses, timeLimitMs) {
         const assignment = new Int8Array(numVars + 1); // 0: 未割当, 1: true, -1: false
         const start = performance.now();
-        const numClauses = clauses.length;
 
-        // ウォッチリスト: 各リテラル lit を含む節のインデックス（単位伝播を O(関連節数) に削減）
-        const watches = new Map();
-        for (let ci = 0; ci < numClauses; ci++) {
-            const clause = clauses[ci];
-            for (let k = 0; k < clause.length; k++) {
-                const lit = clause[k];
-                if (!watches.has(lit)) watches.set(lit, []);
-                watches.get(lit).push(ci);
-            }
-        }
-
-        function assignVar(v, val) {
-            assignment[v] = val;
-            const falseLit = val === 1 ? -v : v;
-            return falseLit;
-        }
-
-        function unitProp(propQueue) {
-            while (propQueue.length > 0) {
-                const falseLit = propQueue.pop();
-                const list = watches.get(falseLit);
-                if (!list) continue;
-                for (let wi = 0; wi < list.length; wi++) {
-                    const ci = list[wi];
+        function unitProp() {
+            while (true) {
+                let changed = false;
+                for (let ci = 0; ci < clauses.length; ci++) {
                     const clause = clauses[ci];
                     let satisfied = false;
                     let unassignedCount = 0;
                     let lastUnassigned = 0;
+
                     for (let k = 0; k < clause.length; k++) {
                         const lit = clause[k];
                         const v = lit > 0 ? lit : -lit;
@@ -204,80 +184,63 @@
                             lastUnassigned = lit;
                         } else {
                             const isTrue = (val === 1 && lit > 0) || (val === -1 && lit < 0);
-                            if (isTrue) { satisfied = true; break; }
+                            if (isTrue) {
+                                satisfied = true;
+                                break;
+                            }
                         }
                     }
-                    if (satisfied) continue;
-                    if (unassignedCount === 0) return false; // 矛盾
-                    if (unassignedCount === 1) {
-                        const v = lastUnassigned > 0 ? lastUnassigned : -lastUnassigned;
-                        if (assignment[v] !== 0) {
-                            const want = lastUnassigned > 0 ? 1 : -1;
-                            if (assignment[v] !== want) return false;
-                            continue;
+
+                    if (!satisfied) {
+                        if (unassignedCount === 0) {
+                            return false; // 矛盾
                         }
-                        const val = lastUnassigned > 0 ? 1 : -1;
-                        propQueue.push(assignVar(v, val));
+                        if (unassignedCount === 1) {
+                            const lit = lastUnassigned;
+                            const v = lit > 0 ? lit : -lit;
+                            const val = lit > 0 ? 1 : -1;
+                            if (assignment[v] === 0) {
+                                assignment[v] = val;
+                                changed = true;
+                            } else if (assignment[v] !== val) {
+                                return false; // 既存割当と矛盾
+                            }
+                        }
                     }
                 }
+                if (!changed) return true;
             }
-            return true;
         }
 
         function chooseVar() {
-            // 辺変数を優先（端末に近い決定で探索が早く収束しやすい）
-            if (edgeVarEnd && edgeVarEnd > 0) {
-                for (let v = 1; v <= edgeVarEnd; v++) {
-                    if (assignment[v] === 0) return v;
-                }
-            }
             for (let v = 1; v <= numVars; v++) {
                 if (assignment[v] === 0) return v;
             }
             return 0;
         }
 
-        function dpll(propQueue) {
-            if (performance.now() - start > timeLimitMs) return null;
-            if (!propQueue) {
-                propQueue = [];
-                for (let v = 1; v <= numVars; v++) {
-                    if (assignment[v] !== 0) {
-                        propQueue.push(assignment[v] === 1 ? -v : v);
-                    }
-                }
+        function dpll() {
+            if (performance.now() - start > timeLimitMs) {
+                return null; // タイムアウト
             }
-            if (!unitProp(propQueue)) return false;
+            if (!unitProp()) return false;
 
             const v = chooseVar();
-            if (v === 0) return true;
+            if (v === 0) return true; // すべて割当済み
 
             const saved = assignment.slice();
-            propQueue.length = 0;
-            propQueue.push(assignVar(v, 1));
-            if (!unitProp(propQueue)) {
-                assignment.set(saved);
-                propQueue.length = 0;
-                propQueue.push(assignVar(v, -1));
-                if (!unitProp(propQueue)) {
-                    assignment.set(saved);
-                    return false;
-                }
-            }
-            let res = dpll([]);
+
+            assignment[v] = 1;
+            let res = dpll();
             if (res === true) return true;
             if (res === null) return null;
 
             assignment.set(saved);
-            propQueue.length = 0;
-            propQueue.push(assignVar(v, -1));
-            if (!unitProp(propQueue)) {
-                assignment.set(saved);
-                return false;
-            }
-            res = dpll([]);
+            assignment[v] = -1;
+            res = dpll();
             if (res === true) return true;
             if (res === null) return null;
+
             assignment.set(saved);
             return false;
         }
@@ -628,7 +591,7 @@
             addClause([labelVar(t.r2, t.c2, t.id)]);
         });
 
-        // エッジとラベルの整合性 (IPSJ 式 (24)-(27)): (辺=1) ⇒ 両端ラベル一致
+        // エッジとラベルの整合性 (Tamura+ 紙の式 (24)-(27))
         for (let i = 0; i < n - 1; i++) {
             for (let j = 0; j < n; j++) {
                 const sVar = vertEdgeVar(i, j);
@@ -652,28 +615,8 @@
             }
         }
 
-        // IPSJ「単位伝播を促す節」: 隣接2マスが同じラベル ⇒ その辺は必ず使用 (¬p_ija ∨ ¬p_kla ∨ e)
-        for (let i = 0; i < n - 1; i++) {
-            for (let j = 0; j < n; j++) {
-                const sVar = vertEdgeVar(i, j);
-                for (let a = 1; a <= pairCount; a++) {
-                    addClause([-labelVar(i, j, a), -labelVar(i + 1, j, a), sVar]);
-                }
-            }
-        }
-        for (let i = 0; i < n; i++) {
-            for (let j = 0; j < n - 1; j++) {
-                const eVar = horizEdgeVar(i, j);
-                for (let a = 1; a <= pairCount; a++) {
-                    addClause([-labelVar(i, j, a), -labelVar(i, j + 1, a), eVar]);
-                }
-            }
-        }
-
-        // SAT ソルバー実行（辺変数上限を渡して変数選択で辺を優先）
-        const edgeVarEnd = vertCount + horizCount;
-        const perInstanceLimit = gridSize >= 10 ? 1500 : 3000;
-        const assign = solveSat(numVars, clauses, perInstanceLimit, edgeVarEnd);
+        // SAT ソルバー実行（1 インスタンスあたりタイムアウトを短めに設定）
+        const assign = solveSat(numVars, clauses, 2000);
         if (!assign) return null;
 
         // 難易度スコア：端点間マンハッタン距離の総和を簡易指標として用いる
@@ -716,7 +659,7 @@
                     return;
                 }
 
-                if (candidate.difficultyScore < baseThreshold) {
+                if (gridSize <= 6 && candidate.difficultyScore < baseThreshold) {
                     // 簡単すぎるのでボツにして再生成
                     setTimeout(attempt, 0);
                     return;
@@ -752,10 +695,10 @@
                 pairCount = 3;
                 break;
             case 6:
-                pairCount = 5; // 6x6 はペア5
+                pairCount = 4;
                 break;
             case 8:
-                pairCount = 9; // 8x8 はペア8
+                pairCount = 7;
                 break;
             case 10:
             default:
